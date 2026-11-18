@@ -136,6 +136,9 @@ export HALYARD_REPO="\${HALYARD_REPO:-${REPO}}"
 exec bash -c "\$(curl -fsSL "https://raw.githubusercontent.com/\${HALYARD_REPO}/main/install/halyard-install.sh")"
 UPD
 chmod 0755 /usr/local/bin/halyard-update
+# `pct exec` runs with a minimal PATH (/bin:/usr/bin), so link both commands there.
+ln -sf /usr/local/bin/halyard-update /usr/bin/halyard-update
+ln -sf /usr/local/bin/halyard /usr/bin/halyard
 
 msg_info "Configuring the system"
 install -d -m 0750 /etc/halyard /var/lib/halyard
