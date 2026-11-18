@@ -50,6 +50,12 @@ type PoolStatus struct {
 
 func (s *Server) poolStatuses(pools []model.Pool) ([]PoolStatus, bool) {
 	stats, err := s.Engine.Runtime.ShowStat()
+	return s.poolStatusesFrom(pools, stats, err == nil)
+}
+
+// poolStatusesFrom summarises pools from stats already read; live says
+// whether HAProxy answered.
+func (s *Server) poolStatusesFrom(pools []model.Pool, stats []haproxy.Stat, live bool) ([]PoolStatus, bool) {
 	byBE := map[string][]haproxy.Stat{}
 	for _, st := range stats {
 		byBE[st.Proxy] = append(byBE[st.Proxy], st)
@@ -70,7 +76,7 @@ func (s *Server) poolStatuses(pools []model.Pool) ([]PoolStatus, bool) {
 				}
 			}
 		}
-		if err == nil {
+		if live {
 			activeTotal := 0
 			for _, m := range p.Members {
 				if !m.Backup && m.State == "ready" {
@@ -99,7 +105,7 @@ func (s *Server) poolStatuses(pools []model.Pool) ([]PoolStatus, bool) {
 		}
 		out = append(out, ps)
 	}
-	return out, err == nil
+	return out, live
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {

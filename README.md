@@ -69,6 +69,37 @@ Options are environment variables: `HALYARD_VERSION`, `HALYARD_ROLE`
 `HALYARD_BINARY` (use a binary you already copied) and
 `HALYARD_NO_CLOUDFLARED=1`.
 
+## Monitoring
+
+The **Monitoring** page samples every 10 seconds and keeps history at three
+resolutions: 10 s for the last hour, 1 minute for two days and 10 minutes for
+two weeks (stored in the SQLite database, so it survives restarts and updates).
+It charts requests, responses by status class, response time, errors, sessions
+and bandwidth; this node's CPU, memory, disk, load and network; and, per pool,
+each member's response time, sessions, health check time and an up/down
+timeline. It also shows VIP ownership, Cloudflare Tunnel connections, peer sync
+and certificate expiry. Members going down or up, VIPs moving between nodes,
+HAProxy stopping and tunnel state changes are recorded as events.
+
+**Prometheus:** every node serves `https://<node>:8443/metrics`. Copy the bearer
+token from the Monitoring page (each node has its own) and scrape it:
+
+```yaml
+scrape_configs:
+  - job_name: halyard
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true   # the UI's self-signed certificate
+    authorization:
+      credentials: hlm_...
+    static_configs:
+      - targets: ['10.0.30.11:8443', '10.0.30.12:8443']
+```
+
+Metrics are prefixed `halyard_` (pools, members, listeners, VIPs, certificates,
+peers, tunnel, host). Add `?haproxy=1` to the URL to append HAProxy's own
+exporter output as well.
+
 ## Updating
 
 Every change merged to `main` publishes a new release automatically
