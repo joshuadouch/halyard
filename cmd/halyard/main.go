@@ -21,6 +21,7 @@ import (
 	"github.com/joshuadouch/halyard/internal/auth"
 	"github.com/joshuadouch/halyard/internal/config"
 	"github.com/joshuadouch/halyard/internal/engine"
+	"github.com/joshuadouch/halyard/internal/metrics"
 	"github.com/joshuadouch/halyard/internal/model"
 	"github.com/joshuadouch/halyard/internal/store"
 	"github.com/joshuadouch/halyard/internal/web"
@@ -128,6 +129,31 @@ func serve(cfgPath string) error {
 	}
 	go eng.Loop(ctx)
 
+	col := &metrics.Collector{Store: st, Runtime: eng.Runtime, DataDir: cfg.DataDir, Node: cfg.Node.Name, Log: log}
+	col.TunnelFn = func(ctx context.Context) metrics.Tunnel {
+		cf, err := st.Cloudflare(ctx)
+		if err != nil || cf.APIToken == "" || cf.TunnelID == "" {
+			return metrics.Tunnel{}
+		}
+		t := metrics.Tunnel{Configured: true, Name: cf.TunnelName}
+		cs := eng.CloudflareStatus(ctx, false)
+		if cs.Tunnel == nil {
+			t.Status, t.Error = "unknown", cs.Error
+			return t
+		}
+		t.Name, t.Status, t.Connections = cs.Tunnel.Name, cs.Tunnel.Status, len(cs.Tunnel.Connections)
+		seen := map[string]bool{}
+		for _, c := range cs.Tunnel.Connections {
+			if !seen[c.ColoName] {
+				seen[c.ColoName] = true
+				t.Colos = append(t.Colos, c.ColoName)
+			}
+		}
+		return t
+	}
+	col.Load(ctx)
+	go col.Run(ctx)
+
 	certFile, keyFile := cfg.TLSCert, cfg.TLSKey
 	if certFile == "" {
 		certFile, keyFile = cfg.Path("ui-cert.pem"), cfg.Path("ui-key.pem")
@@ -135,7 +161,7 @@ func serve(cfgPath string) error {
 			return err
 		}
 	}
-	srv := &api.Server{Cfg: cfg, Store: st, Engine: eng, Log: log, UI: web.FS(), Version: version}
+	srv := &api.Server{Cfg: cfg, Store: st, Engine: eng, Log: log, UI: web.FS(), Version: version, Metrics: col}
 	hs := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           srv.Handler(),

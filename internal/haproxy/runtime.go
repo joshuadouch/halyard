@@ -94,6 +94,22 @@ type Stat struct {
 	BytesIn     int64   `json:"bytes_in"`
 	BytesOut    int64   `json:"bytes_out"`
 	ErrorRate   float64 `json:"-"`
+
+	// Counters used by the metrics collector.
+	Type      int   `json:"-"` // 0 frontend, 1 backend, 2 server
+	Resp2xx   int64 `json:"-"`
+	Resp3xx   int64 `json:"-"`
+	Resp4xx   int64 `json:"-"`
+	ReqTotal  int64 `json:"-"` // HTTP requests (frontends and backends)
+	EConn     int64 `json:"-"` // connection errors to servers
+	EResp     int64 `json:"-"` // response errors from servers
+	EReq      int64 `json:"-"` // request errors (frontends)
+	DReq      int64 `json:"-"` // denied requests (frontends)
+	QueueCur  int   `json:"-"`
+	ChkFail   int64 `json:"-"`
+	Downtime  int64 `json:"-"` // seconds spent down
+	MaxSess   int   `json:"-"`
+	SessLimit int   `json:"-"`
 }
 
 // ShowStat parses "show stat".
@@ -141,6 +157,11 @@ func ParseStat(out string) ([]Stat, error) {
 			CheckCode: get(row, "check_code"), CheckMS: atoi(get(row, "check_duration")), LastChange: atoi(get(row, "lastchg")),
 			Resp5xx: atoi64(get(row, "hrsp_5xx")), AvgRespMS: atoi(get(row, "rtime")), AvgTotalMS: atoi(get(row, "ttime")),
 			BytesIn: atoi64(get(row, "bin")), BytesOut: atoi64(get(row, "bout")),
+			Type: atoi(get(row, "type")), Resp2xx: atoi64(get(row, "hrsp_2xx")), Resp3xx: atoi64(get(row, "hrsp_3xx")),
+			Resp4xx: atoi64(get(row, "hrsp_4xx")), ReqTotal: atoi64(get(row, "req_tot")), EConn: atoi64(get(row, "econ")),
+			EResp: atoi64(get(row, "eresp")), EReq: atoi64(get(row, "ereq")), DReq: atoi64(get(row, "dreq")),
+			QueueCur: atoi(get(row, "qcur")), ChkFail: atoi64(get(row, "chkfail")), Downtime: atoi64(get(row, "downtime")),
+			MaxSess: atoi(get(row, "smax")), SessLimit: atoi(get(row, "slim")),
 		}
 		for _, k := range []string{"hrsp_1xx", "hrsp_2xx", "hrsp_3xx", "hrsp_4xx", "hrsp_5xx", "hrsp_other"} {
 			s.RespTotal += atoi64(get(row, k))
@@ -148,4 +169,25 @@ func ParseStat(out string) ([]Stat, error) {
 		stats = append(stats, s)
 	}
 	return stats, nil
+}
+
+// ShowInfo returns "show info" as key/value pairs (Uptime_sec, CurrConns, ...).
+func (r Runtime) ShowInfo() (map[string]string, error) {
+	out, err := r.Exec("show info")
+	if err != nil {
+		return nil, err
+	}
+	return ParseInfo(out), nil
+}
+
+// ParseInfo parses "show info" output.
+func ParseInfo(out string) map[string]string {
+	m := map[string]string{}
+	for _, l := range strings.Split(out, "\n") {
+		k, v, ok := strings.Cut(l, ":")
+		if ok && k != "" {
+			m[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+	return m
 }

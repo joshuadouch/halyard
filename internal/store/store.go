@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE TABLE IF NOT EXISTS revisions (
   id INTEGER PRIMARY KEY AUTOINCREMENT, time TEXT NOT NULL, author TEXT NOT NULL, message TEXT NOT NULL,
   haproxy TEXT NOT NULL, keepalived TEXT NOT NULL, snapshot TEXT NOT NULL, status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS metrics (
+  tier INTEGER NOT NULL, t INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (tier, t));
 `
 
 // Open opens (and migrates) the database at path.

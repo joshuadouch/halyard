@@ -15,6 +15,7 @@ import (
 	"github.com/joshuadouch/halyard/internal/auth"
 	"github.com/joshuadouch/halyard/internal/config"
 	"github.com/joshuadouch/halyard/internal/engine"
+	"github.com/joshuadouch/halyard/internal/metrics"
 	"github.com/joshuadouch/halyard/internal/model"
 	"github.com/joshuadouch/halyard/internal/store"
 )
@@ -27,6 +28,8 @@ type Server struct {
 	Log    *slog.Logger
 	UI     fs.FS
 	Access *auth.AccessVerifier
+	// Metrics is the sampler behind the Monitoring page and /metrics.
+	Metrics *metrics.Collector
 	// Version is shown in the UI.
 	Version string
 
@@ -72,6 +75,10 @@ func (s *Server) Handler() http.Handler {
 	a("GET /api/dashboard", s.dashboard)
 	a("GET /api/stats", s.stats)
 	a("GET /api/events", s.events)
+	a("GET /api/monitoring", s.monitoring)
+	a("GET /api/monitoring/series", s.monitoringSeries)
+	a("GET /api/monitoring/token", s.getMetricsToken)
+	a("POST /api/monitoring/token", s.rotateMetricsToken)
 	a("GET /api/nodes", s.nodes)
 	a("POST /api/cluster/sync-now", s.syncNow)
 	a("GET /api/update", s.updateInfo)
@@ -120,6 +127,9 @@ func (s *Server) Handler() http.Handler {
 	a("POST /api/revisions/{id}/rollback", s.rollback)
 	a("GET /api/preview", s.preview)
 	a("POST /api/apply", s.apply)
+
+	// Prometheus: a bearer token (see the Monitoring page) or a signed-in session.
+	mux.HandleFunc("GET /metrics", s.prometheus)
 
 	mux.Handle("/api/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "no such endpoint")

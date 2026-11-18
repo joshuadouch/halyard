@@ -11,6 +11,7 @@ const P: Record<string, ReactNode> = {
   node: <><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></>,
   hist: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></>,
   set: <><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" /></>,
+  pulse: <path d="M3 12h4l3-8 4 16 3-8h4" />,
   plus: <path d="M12 5v14M5 12h14" />,
   check: <path d="M20 6L9 17l-5-5" />,
   x: <path d="M18 6L6 18M6 6l12 12" />,

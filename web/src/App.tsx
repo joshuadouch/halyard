@@ -4,6 +4,7 @@ import { get, post, setUnauthorizedHandler, User } from './api';
 import { Badge, Icon, Logo, ToastProvider } from './ui';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Monitoring from './pages/Monitoring';
 import Hosts from './pages/Hosts';
 import HostEditor from './pages/HostEditor';
 import Pools from './pages/Pools';
@@ -19,14 +20,14 @@ import AccessLists from './pages/AccessLists';
 export interface Me { user: User; node: string; role: string; version: string; has_password: boolean }
 
 const nav = [
-  ['Overview'], ['/', 'dash', 'Dashboard'],
+  ['Overview'], ['/', 'dash', 'Dashboard'], ['/monitoring', 'pulse', 'Monitoring'],
   ['Traffic'], ['/hosts', 'host', 'Hosts'], ['/pools', 'pool', 'Pools'], ['/vips', 'vip', 'VIPs'],
   ['Security'], ['/certificates', 'cert', 'Certificates'], ['/access', 'lock', 'Access lists'],
   ['Platform'], ['/cloudflare', 'cloud', 'Cloudflare'], ['/nodes', 'node', 'Nodes'], ['/history', 'hist', 'Config history'], ['/settings', 'set', 'Settings'],
 ];
 
 const titles: Record<string, string> = {
-  '': 'Dashboard', hosts: 'Hosts', pools: 'Pools', vips: 'VIPs', certificates: 'Certificates', access: 'Access lists',
+  '': 'Dashboard', monitoring: 'Monitoring', hosts: 'Hosts', pools: 'Pools', vips: 'VIPs', certificates: 'Certificates', access: 'Access lists',
   cloudflare: 'Cloudflare', nodes: 'Nodes', history: 'Config history', settings: 'Settings',
 };
 
@@ -63,6 +64,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
         <div className="content">
           <Routes>
             <Route path="/" element={<Dashboard me={me} />} />
+            <Route path="/monitoring" element={<Monitoring />} />
             <Route path="/hosts" element={<Hosts />} />
             <Route path="/hosts/:id" element={<HostEditor />} />
             <Route path="/pools" element={<Pools />} />
