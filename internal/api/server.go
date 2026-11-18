@@ -72,6 +72,8 @@ func (s *Server) Handler() http.Handler {
 	a("POST /api/cluster/sync-now", s.syncNow)
 
 	a("GET /api/vips", s.listVIPs)
+	a("GET /api/interfaces", s.listInterfaces)
+	a("PUT /api/interfaces/{name}/label", s.setInterfaceLabel)
 	a("POST /api/vips", s.saveVIP)
 	a("PUT /api/vips/{id}", s.saveVIP)
 	a("DELETE /api/vips/{id}", s.deleteVIP)
