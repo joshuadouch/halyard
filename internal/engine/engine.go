@@ -384,6 +384,8 @@ func (e *Engine) Loop(ctx context.Context) {
 	defer ips.Stop()
 	defer cf.Stop()
 	time.AfterFunc(30*time.Second, func() { e.RenewDue(ctx) })
+	// Push to peers soon after start, so an update or restart re-syncs standbys.
+	time.AfterFunc(10*time.Second, func() { e.SyncPeers(ctx) })
 	for {
 		select {
 		case <-ctx.Done():
