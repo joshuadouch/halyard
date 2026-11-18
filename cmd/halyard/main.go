@@ -101,6 +101,7 @@ func serve(cfgPath string) error {
 	defer stop()
 
 	eng := engine.New(cfg, st, log)
+	eng.Version = version
 	if err := eng.Bootstrap(ctx); err != nil {
 		return err
 	}

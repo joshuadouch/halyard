@@ -47,7 +47,10 @@ func (s *Server) Handler() http.Handler {
 	s.limiter = newLoginLimiter()
 	mux := http.NewServeMux()
 	// Public endpoints.
-	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]any{"ok": true}) })
+	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"ok": true, "version": s.Version, "role": s.Cfg.Node.Role, "node": s.Cfg.Node.Name})
+	})
+	mux.HandleFunc("POST /api/cluster/upgrade", s.clusterUpgrade)
 	mux.HandleFunc("GET /api/setup", s.getSetup)
 	mux.HandleFunc("POST /api/setup", s.postSetup)
 	mux.HandleFunc("POST /api/login", s.login)
@@ -70,6 +73,8 @@ func (s *Server) Handler() http.Handler {
 	a("GET /api/events", s.events)
 	a("GET /api/nodes", s.nodes)
 	a("POST /api/cluster/sync-now", s.syncNow)
+	a("GET /api/update", s.updateInfo)
+	a("POST /api/update", s.startUpdate)
 
 	a("GET /api/vips", s.listVIPs)
 	a("GET /api/interfaces", s.listInterfaces)

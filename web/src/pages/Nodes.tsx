@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ago, get, post } from '../api';
 import { Badge, ErrorBox, Loading, useLoad, useToast } from '../ui';
 
@@ -6,6 +6,71 @@ interface Peer { name: string; url: string; address: string; ok: boolean; time: 
 interface NodesResp {
   self: { name: string; role: string; address: string; vips_held: string[] | null; haproxy_socket: boolean; keepalived: boolean };
   peers: Peer[] | null;
+}
+
+interface UpNode { name: string; url: string; version: string; reachable: boolean; self: boolean; error?: string }
+interface UpJob { running: boolean; target: string; author: string; started: string; finished: string; step: string; log: string[] | null; error: string }
+interface UpInfo { current: string; latest: string; latest_url: string; check_error?: string; nodes: UpNode[]; job: UpJob }
+
+function Software({ primary }: { primary: boolean }) {
+  const [info, setInfo] = useState<UpInfo | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const [restarting, setRestarting] = useState<string>('');
+  const load = () => get<UpInfo>('/update').then((i) => { setInfo(i); setErr(null); if (i.job.step === 'self') setRestarting(i.job.target); }).catch(setErr);
+  useEffect(() => { load(); }, []);
+  // Poll while a job runs; while this node restarts, wait for /api/health to report the new version.
+  useEffect(() => {
+    if (!restarting && !info?.job.running) return;
+    const t = setInterval(async () => {
+      if (restarting) {
+        try {
+          const h = await fetch('/api/health').then((r) => r.json());
+          if (h.version === restarting) window.location.reload();
+        } catch { /* still restarting */ }
+        return;
+      }
+      load();
+    }, 3000);
+    return () => clearInterval(t);
+  }, [restarting, info?.job.running]);
+
+  const start = async () => {
+    if (!info) return;
+    if (!confirm(`Upgrade every node to ${info.latest}? The standby is upgraded first; this node goes last. Traffic keeps flowing, but the UI restarts at the end.`)) return;
+    try { setInfo(await post<UpInfo>('/update', { target: info.latest })); } catch (e) { setErr(e); }
+  };
+  if (!info) return <div className="card" style={{ marginTop: 16 }}><div className="ch"><h3>Software</h3></div>{err ? <div className="cb"><ErrorBox error={err} /></div> : <Loading />}</div>;
+  const behind = info.latest && info.nodes.some((n) => n.version !== info.latest);
+  const job = info.job;
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="ch"><h3>Software</h3>
+        {primary && behind && !job.running && !restarting && <button className="btn p s" onClick={start}>Upgrade all nodes to {info.latest}</button>}
+      </div>
+      <div className="cb">
+        <ErrorBox error={err} />
+        <div className="muted" style={{ marginBottom: 12 }}>
+          {info.check_error ? <>Could not check for releases: {info.check_error}</>
+            : info.latest ? <>Latest release: <a href={info.latest_url} target="_blank" rel="noreferrer" className="mono">{info.latest}</a>{!behind && ' · every node is up to date'}</> : 'Checking…'}
+          {!primary && <> · Start upgrades from the primary.</>}
+        </div>
+        <table>
+          <thead><tr><th>Node</th><th>Version</th><th></th></tr></thead>
+          <tbody>{info.nodes.map((n) => (
+            <tr key={n.name}><td><b>{n.name}</b>{n.self && <span className="dim"> (this node)</span>}</td>
+              <td className="mono">{n.reachable ? n.version : <span className="dim">unreachable</span>}</td>
+              <td>{!n.reachable ? <Badge kind="b">{n.error ? 'offline' : '?'}</Badge> : info.latest && n.version === info.latest ? <Badge kind="g">up to date</Badge> : info.latest ? <Badge kind="a">update available</Badge> : null}</td></tr>))}</tbody>
+        </table>
+        {(job.running || job.log?.length || restarting) && (
+          <div style={{ marginTop: 14 }}>
+            <b>{restarting ? `Restarting this node on ${restarting}…` : job.running ? `Upgrading to ${job.target}…` : job.error ? 'Upgrade stopped' : `Upgrade to ${job.target} finished`}</b>
+            {job.error && <div className="err mono" style={{ marginTop: 6 }}>{job.error}</div>}
+            <div className="code mono" style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>{(job.log ?? []).join('\n')}{restarting && '\n…waiting for this node to come back'}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function Nodes() {
@@ -48,6 +113,7 @@ export default function Nodes() {
             </tbody></table>}
         </div>
       </div>
+      <Software primary={s.role === 'primary'} />
     </>
   );
 }
