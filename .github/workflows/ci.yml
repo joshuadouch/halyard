@@ -1,0 +1,32 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install HAProxy (render tests validate with haproxy -c)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq haproxy shellcheck
+      - name: Web UI
+        run: cd web && npm ci && npx tsc --noEmit && npm run build
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Shell scripts
+        run: shellcheck -S warning ct/halyard.sh install/halyard-install.sh

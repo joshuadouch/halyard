@@ -1,0 +1,9 @@
+/bin/
+/dist/
+web/node_modules/
+internal/web/dist/*
+!internal/web/dist/.keep
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
