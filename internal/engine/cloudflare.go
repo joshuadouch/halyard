@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/joshuadouch/halyard/internal/cloudflare"
@@ -28,10 +29,89 @@ type CloudflareReport struct {
 }
 
 // LastCloudflareReport returns the latest reconcile report.
+// It does not wait for a reconcile in progress.
 func (e *Engine) LastCloudflareReport() CloudflareReport {
-	e.cfMu.Lock()
-	defer e.cfMu.Unlock()
+	e.cfStateMu.Lock()
+	defer e.cfStateMu.Unlock()
 	return e.cfReport
+}
+
+func (e *Engine) setReport(r CloudflareReport) {
+	e.cfStateMu.Lock()
+	e.cfReport = r
+	e.cfStateMu.Unlock()
+}
+
+// CloudflareStatus is the live account view for the Cloudflare page.
+type CloudflareStatus struct {
+	Zones  []cloudflare.Zone
+	AOP    map[string]bool
+	Tunnel *cloudflare.Tunnel
+	Error  string
+	at     time.Time
+	token  string
+}
+
+// CloudflareStatus returns zones, per-zone AOP state and tunnel health,
+// cached for a minute so pages load quickly. force skips the cache.
+func (e *Engine) CloudflareStatus(ctx context.Context, force bool) CloudflareStatus {
+	s, err := e.Store.Cloudflare(ctx)
+	if err != nil || s.APIToken == "" {
+		return CloudflareStatus{AOP: map[string]bool{}}
+	}
+	e.cfStateMu.Lock()
+	c := e.cfStatus
+	e.cfStateMu.Unlock()
+	if !force && c.token == s.APIToken && time.Since(c.at) < time.Minute {
+		return c
+	}
+	st := CloudflareStatus{AOP: map[string]bool{}, at: time.Now(), token: s.APIToken}
+	cl := cloudflare.New(s.APIToken)
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	zones, err := cl.Zones(ctx)
+	if err != nil {
+		st.Error = err.Error()
+	}
+	st.Zones = zones
+	// Ask for every zone's AOP setting and the tunnel at the same time.
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for _, z := range zones {
+		wg.Add(1)
+		go func(z cloudflare.Zone) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if on, err := cl.AOPEnabled(ctx, z.ID); err == nil {
+				mu.Lock()
+				st.AOP[z.Name] = on
+				mu.Unlock()
+			}
+		}(z)
+	}
+	if s.TunnelID != "" && s.AccountID != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if t, err := cl.Tunnel(ctx, s.AccountID, s.TunnelID); err == nil {
+				st.Tunnel = &t
+			}
+		}()
+	}
+	wg.Wait()
+	e.cfStateMu.Lock()
+	e.cfStatus = st
+	e.cfStateMu.Unlock()
+	return st
+}
+
+// InvalidateCloudflareStatus drops the cached account view.
+func (e *Engine) InvalidateCloudflareStatus() {
+	e.cfStateMu.Lock()
+	e.cfStatus = CloudflareStatus{}
+	e.cfStateMu.Unlock()
 }
 
 // UIOrigin is where the tunnel sends traffic for the management hostname.
@@ -78,7 +158,7 @@ func (e *Engine) ReconcileCloudflare(ctx context.Context, dryRun bool) (Cloudfla
 	cl := cloudflare.New(settings.APIToken)
 	fail := func(err error) (CloudflareReport, error) {
 		rep.Error = err.Error()
-		e.cfReport = rep
+		e.setReport(rep)
 		return rep, err
 	}
 	changes, states, dnsErr := cloudflare.ReconcileDNS(ctx, cl, plan.Records, dryRun)
@@ -124,7 +204,7 @@ func (e *Engine) ReconcileCloudflare(ctx context.Context, dryRun bool) (Cloudfla
 	}
 	settings.LastReconcile = rep.Time.Format(time.RFC3339)
 	_ = e.Store.SetCloudflare(ctx, settings)
-	e.cfReport = rep
+	e.setReport(rep)
 	if dnsErr != nil {
 		return rep, errors.New(rep.Error)
 	}
@@ -280,5 +360,11 @@ func (e *Engine) SetAOP(ctx context.Context, zoneName string, on bool) error {
 		state = "enabled"
 	}
 	e.Store.AddEvent(ctx, "info", "cloudflare", fmt.Sprintf("Authenticated Origin Pulls %s for %s", state, zoneName))
+	// Cloudflare can take a moment to report the new value; trust what we set.
+	e.cfStateMu.Lock()
+	if e.cfStatus.AOP != nil {
+		e.cfStatus.AOP[zoneName] = on
+	}
+	e.cfStateMu.Unlock()
 	return e.Store.SetCloudflare(ctx, s)
 }

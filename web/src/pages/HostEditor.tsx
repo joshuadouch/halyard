@@ -28,7 +28,7 @@ export default function HostEditor() {
         setVips(v); setPools(p); setCerts(c);
         setH(host ?? blank(v[0]?.id ?? '', p[0]?.id ?? ''));
       }).catch(setErr);
-    get<CFView>('/cloudflare').then(setCf).catch(() => {});
+    get<CFView>('/cloudflare?light=1').then(setCf).catch(() => {});
   }, [id, isNew]);
 
   if (!h) return err ? <ErrorBox error={err} /> : <Loading />;

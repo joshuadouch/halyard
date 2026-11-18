@@ -5,7 +5,7 @@ import { Badge, Chips, ErrorBox, Field, Icon, Loading, Seg, useLoad, useToast } 
 
 export default function Certificates() {
   const toast = useToast();
-  const { data, error, reload } = useLoad(() => Promise.all([get<Cert[]>('/certs'), get<CFView>('/cloudflare').catch(() => null)]), [], 5000);
+  const { data, error, reload } = useLoad(() => Promise.all([get<Cert[]>('/certs'), get<CFView>('/cloudflare?light=1').catch(() => null)]), [], 5000);
   const [mode, setMode] = useState<'acme' | 'upload' | null>(null);
   const [domains, setDomains] = useState<string[]>([]);
   const [keyType, setKeyType] = useState<'ec256' | 'rsa2048'>('ec256');
