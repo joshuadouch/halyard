@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"strings"
@@ -66,6 +67,10 @@ func (s *Server) getSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) postSetup(w http.ResponseWriter, r *http.Request) {
+	if !s.Cfg.IsPrimary() {
+		writeErr(w, 409, "This is a standby node. Create the admin on the primary; accounts sync here within 5 minutes.")
+		return
+	}
 	n, err := s.Store.CountUsers(r.Context())
 	if err != nil || n > 0 {
 		writeErr(w, 403, "setup is already complete")
@@ -85,7 +90,7 @@ func (s *Server) postSetup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	if err := s.Store.SaveUser(r.Context(), u); err != nil {
+	if err := s.saveUser(r.Context(), u); err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
@@ -195,7 +200,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.PasswordHash = h
-	if err := s.Store.SaveUser(r.Context(), u); err != nil {
+	if err := s.saveUser(r.Context(), u); err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
@@ -209,7 +214,7 @@ func (s *Server) totpSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.TOTPSecret = auth.NewTOTPSecret()
-	if err := s.Store.SaveUser(r.Context(), u); err != nil {
+	if err := s.saveUser(r.Context(), u); err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
@@ -230,7 +235,7 @@ func (s *Server) totpEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.TOTPEnabled = true
-	if err := s.Store.SaveUser(r.Context(), u); err != nil {
+	if err := s.saveUser(r.Context(), u); err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
@@ -251,7 +256,7 @@ func (s *Server) totpDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.TOTPEnabled, u.TOTPSecret = false, ""
-	if err := s.Store.SaveUser(r.Context(), u); err != nil {
+	if err := s.saveUser(r.Context(), u); err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
@@ -286,7 +291,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "username is taken")
 		return
 	}
-	if err := s.Store.SaveUser(r.Context(), u); err != nil {
+	if err := s.saveUser(r.Context(), u); err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
@@ -300,9 +305,33 @@ func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "you cannot delete yourself")
 		return
 	}
-	if err := s.Store.DeleteUser(r.Context(), id); err != nil {
+	if err := s.removeUser(r.Context(), id); err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+// saveUser and removeUser push account changes to standby nodes, so the same
+// logins work everywhere.
+func (s *Server) saveUser(ctx context.Context, u model.User) error {
+	if err := s.Store.SaveUser(ctx, u); err != nil {
+		return err
+	}
+	s.usersChanged()
+	return nil
+}
+
+func (s *Server) removeUser(ctx context.Context, id string) error {
+	if err := s.Store.DeleteUser(ctx, id); err != nil {
+		return err
+	}
+	s.usersChanged()
+	return nil
+}
+
+func (s *Server) usersChanged() {
+	if s.Engine != nil && s.Cfg.IsPrimary() {
+		go s.Engine.SyncPeers(context.Background())
+	}
 }
