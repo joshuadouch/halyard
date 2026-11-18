@@ -134,7 +134,7 @@ export default function Monitoring() {
         {m.pools.length === 0 ? <div className="empty">No pools yet.</div> : (
           <div className="mon-scroll">
             <table>
-              <thead><tr><th>Pool</th><th>Status</th><th>Requests/s, last hour</th><th>Avg time</th><th>5xx</th><th>Open</th><th>Queue</th></tr></thead>
+              <thead><tr><th>Pool</th><th>Status</th><th>Requests/s</th><th>Avg time</th><th>5xx</th><th>Open</th><th>Queue</th></tr></thead>
               <tbody>{m.pools.map((p) => (
                 <tr key={p.id} className={'click' + (p.id === poolID ? ' mon-sel' : '')} onClick={() => setPoolID(p.id === poolID ? null : p.id)}>
                   <td><b>{p.name}</b> <span className="dim">{p.mode}</span></td>

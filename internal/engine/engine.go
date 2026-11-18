@@ -416,6 +416,15 @@ func (e *Engine) Loop(ctx context.Context) {
 	time.AfterFunc(30*time.Second, func() { e.RenewDue(ctx) })
 	// Push to peers soon after start, so an update or restart re-syncs standbys.
 	time.AfterFunc(10*time.Second, func() { e.SyncPeers(ctx) })
+	// Reconcile soon after start too, so an update that changes the tunnel
+	// ingress takes effect right away rather than at the next tick.
+	if e.Cfg.IsPrimary() {
+		time.AfterFunc(20*time.Second, func() {
+			if _, err := e.ReconcileCloudflare(ctx, false); err != nil && !errors.Is(err, ErrCloudflareOff) {
+				e.Log.Warn("cloudflare reconcile", "err", err)
+			}
+		})
+	}
 	for {
 		select {
 		case <-ctx.Done():

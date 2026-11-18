@@ -69,7 +69,7 @@ export default function Certificates() {
           {!mode && <div className="cb"><ErrorBox error={err} /></div>}
         </div>
         {mode && (
-          <div className="card" style={{ width: 380, flex: 'none' }}>
+          <div className="card panel" style={{ width: 380, flex: 'none' }}>
             <div className="ch"><h3>{mode === 'acme' ? 'Request certificate' : 'Upload certificate'}</h3><button className="btn s ghost" onClick={() => setMode(null)}><Icon name="x" size={14} /></button></div>
             <div className="cb">
               <ErrorBox error={err} />

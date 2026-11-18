@@ -111,7 +111,7 @@ export default function VIPs() {
           )}
         </div>
         {edit && (
-          <div className="card" style={{ width: 340, flex: 'none' }}>
+          <div className="card panel" style={{ width: 340, flex: 'none' }}>
             <div className="ch"><h3>{edit.id ? 'Edit VIP' : 'Add VIP'}</h3><button className="btn s ghost" onClick={() => setEdit(null)}><Icon name="x" size={14} /></button></div>
             <div className="cb">
               <ErrorBox error={err} />
