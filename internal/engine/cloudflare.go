@@ -17,6 +17,9 @@ import (
 // ErrCloudflareOff means no Cloudflare token is configured.
 var ErrCloudflareOff = errors.New("cloudflare is not configured")
 
+// ErrStandby means a standby was asked to change Cloudflare.
+var ErrStandby = errors.New("this node is a standby; Cloudflare is synced from the primary")
+
 // CloudflareReport is the outcome of the latest reconcile.
 type CloudflareReport struct {
 	Time    time.Time                `json:"time"`
@@ -115,12 +118,41 @@ func (e *Engine) InvalidateCloudflareStatus() {
 }
 
 // UIOrigin is where the tunnel sends traffic for the management hostname.
+//
+// Every node runs a cloudflared replica of the same tunnel, and Cloudflare
+// hands each request to whichever connector it likes. An origin of 127.0.0.1
+// would therefore land on a read-only standby as often as not, so in a
+// cluster the origin is the primary's own address: any connector forwards
+// the UI to the node that accepts edits and owns the user list.
 func (e *Engine) UIOrigin() string {
-	_, port, err := net.SplitHostPort(e.Cfg.Listen)
+	host, port, err := net.SplitHostPort(e.Cfg.Listen)
 	if err != nil || port == "" {
-		port = "8443"
+		host, port = "", "8443"
 	}
-	return "https://127.0.0.1:" + port
+	return "https://" + net.JoinHostPort(uiOriginHost(host, e.Cfg.Node.Address, len(e.Cfg.Cluster.Peers) > 0), port)
+}
+
+// uiOriginHost picks the address cloudflared should dial for the UI.
+func uiOriginHost(listenHost, nodeAddr string, cluster bool) string {
+	if ip := net.ParseIP(listenHost); ip != nil && ip.IsLoopback() {
+		// Only reachable locally; peers could not reach it anyway.
+		return listenHost
+	}
+	if listenHost == "localhost" {
+		return "127.0.0.1"
+	}
+	if !cluster {
+		return "127.0.0.1"
+	}
+	if listenHost != "" {
+		if ip := net.ParseIP(listenHost); ip == nil || !ip.IsUnspecified() {
+			return listenHost
+		}
+	}
+	if nodeAddr != "" {
+		return nodeAddr
+	}
+	return "127.0.0.1"
 }
 
 // ReconcileCloudflare syncs DNS records and tunnel ingress with the hosts.
@@ -128,6 +160,11 @@ func (e *Engine) ReconcileCloudflare(ctx context.Context, dryRun bool) (Cloudfla
 	e.cfMu.Lock()
 	defer e.cfMu.Unlock()
 	rep := CloudflareReport{Time: time.Now().UTC(), DryRun: dryRun}
+	if !dryRun && !e.Cfg.IsPrimary() {
+		// The primary owns DNS and tunnel ingress; a standby writing them
+		// would point the UI at itself until the primary's next reconcile.
+		return rep, ErrStandby
+	}
 	settings, err := e.Store.Cloudflare(ctx)
 	if err != nil {
 		return rep, err
