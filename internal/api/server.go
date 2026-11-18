@@ -69,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	a("GET /api/stats", s.stats)
 	a("GET /api/events", s.events)
 	a("GET /api/nodes", s.nodes)
+	a("POST /api/cluster/sync-now", s.syncNow)
 
 	a("GET /api/vips", s.listVIPs)
 	a("POST /api/vips", s.saveVIP)
@@ -233,6 +234,20 @@ func readJSON(r *http.Request, v any) error {
 		return errors.New("invalid JSON: " + err.Error())
 	}
 	return nil
+}
+
+// syncNow pushes config and users to every peer immediately (primary only).
+func (s *Server) syncNow(w http.ResponseWriter, r *http.Request) {
+	if !s.Cfg.IsPrimary() {
+		writeErr(w, 409, "only the primary pushes config")
+		return
+	}
+	if len(s.Cfg.Cluster.Peers) == 0 {
+		writeErr(w, 400, "no peers are configured in /etc/halyard/halyard.yaml")
+		return
+	}
+	s.Engine.SyncPeers(r.Context())
+	writeJSON(w, 200, s.Engine.PeerStatuses())
 }
 
 func (s *Server) clusterSync(w http.ResponseWriter, r *http.Request) {
