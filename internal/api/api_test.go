@@ -24,6 +24,7 @@ type client struct {
 	t    *testing.T
 	base string
 	hc   *http.Client
+	srv  *Server
 }
 
 func (c *client) do(method, path string, body any, csrf bool) (int, map[string]any) {
@@ -85,7 +86,7 @@ func newTestServer(t *testing.T) *client {
 	t.Cleanup(func() { ts.Close() })
 	hc := ts.Client()
 	hc.Jar, _ = cookiejar.New(nil)
-	return &client{t: t, base: ts.URL, hc: hc}
+	return &client{t: t, base: ts.URL, hc: hc, srv: srv}
 }
 
 func TestAPIFlow(t *testing.T) {
@@ -172,5 +173,47 @@ func TestAPIFlow(t *testing.T) {
 	}
 	if code, _ = c.do("DELETE", "/api/access-lists/"+aclID, nil, true); code != 400 {
 		t.Fatalf("deleted an access list a host still uses: %d", code)
+	}
+}
+
+func TestPeerInterfaces(t *testing.T) {
+	c := newTestServer(t)
+	if code, out := c.do("POST", "/api/setup", map[string]string{"username": "admin", "password": "a-long-password"}, false); code != 200 {
+		t.Fatalf("setup: %d %v", code, out)
+	}
+	// The node is its own peer here, reached over the sealed cluster endpoint.
+	c.srv.Cfg.Cluster.Peers = []config.Peer{{Name: "lb-peer", URL: c.base}}
+	if code, out := c.do("PUT", "/api/interfaces/lo/label?node=lb-peer", map[string]string{"label": "Loopback"}, true); code != 200 {
+		t.Fatalf("label via peer: %d %v", code, out)
+	}
+	if got := c.srv.interfaceLabels(context.Background())["lo"]; got != "Loopback" {
+		t.Fatalf("label not saved on the peer: %q", got)
+	}
+	code, out := c.do("GET", "/api/nodes/interfaces", nil, false)
+	raw, _ := json.Marshal(out)
+	if code != 200 {
+		t.Fatalf("all interfaces: %d %s", code, raw)
+	}
+	req, _ := http.NewRequest("GET", c.base+"/api/nodes/interfaces", nil)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var nodes []NodeInterfaces
+	if err := json.NewDecoder(resp.Body).Decode(&nodes); err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 2 || !nodes[0].Self || nodes[1].Node != "lb-peer" || nodes[1].Error != "" {
+		t.Fatalf("unexpected nodes: %+v", nodes)
+	}
+	// Forged requests are refused.
+	resp2, err := c.hc.Post(c.base+"/api/cluster/interfaces", "application/octet-stream", strings.NewReader("not sealed"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
+	if resp2.StatusCode != 400 {
+		t.Fatalf("unsealed request: %d", resp2.StatusCode)
 	}
 }

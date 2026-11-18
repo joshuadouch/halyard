@@ -4,6 +4,7 @@ import { Badge, ErrorBox, Field, Icon, Loading, Seg, Toggle, useLoad, useToast }
 
 interface NodesResp { self: { name: string; role: string }; peers: { name: string }[] | null }
 interface Iface { name: string; mac: string; up: boolean; addrs: string[]; networks: string[]; label: string; vips: string[] }
+interface NodeIfaces { node: string; self: boolean; error?: string; interfaces: Iface[] }
 
 function ip4(s: string): number | null {
   const p = s.split('.');
@@ -24,12 +25,12 @@ function ifaceFor(ifs: Iface[], ip: string): Iface | undefined {
 }
 const ifaceText = (i: Iface) => `${i.name}${i.label ? ' · ' + i.label : ''} (${i.addrs.length ? i.addrs.join(', ') : 'no address'})`;
 
-function LabelInput({ iface, onSaved }: { iface: Iface; onSaved: () => void }) {
+function LabelInput({ iface, node, onSaved }: { iface: Iface; node: string; onSaved: () => void }) {
   const [v, setV] = useState(iface.label);
   const toast = useToast();
   const save = async () => {
     if (v.trim() === iface.label) return;
-    try { await put(`/interfaces/${encodeURIComponent(iface.name)}/label`, { label: v }); toast(`Labelled ${iface.name}`); onSaved(); } catch { toast('Could not save label'); }
+    try { await put(`/interfaces/${encodeURIComponent(iface.name)}/label?node=${encodeURIComponent(node)}`, { label: v }); toast(`Labelled ${iface.name} on ${node}`); onSaved(); } catch { toast('Could not save label'); }
   };
   return <input className="input" style={{ height: 30 }} value={v} placeholder="e.g. Servers VLAN 20" onChange={(e) => setV(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />;
 }
@@ -38,14 +39,19 @@ const blank: VIP = { id: '', address: '', label: '', interface: 'eth0', vrid: 51
 
 export default function VIPs() {
   const toast = useToast();
-  const { data, error, reload } = useLoad(() => Promise.all([get<VIPRow[]>('/vips'), get<NodesResp>('/nodes'), get<Iface[]>('/interfaces')]));
+  const { data, error, reload } = useLoad(() => Promise.all([get<VIPRow[]>('/vips'), get<NodesResp>('/nodes'), get<NodeIfaces[]>('/nodes/interfaces')]));
   const [edit, setEdit] = useState<VIP | null>(null);
   const [ifTouched, setIfTouched] = useState(false);
   const [err, setErr] = useState<unknown>(null);
+  const [tab, setTab] = useState('');
   const [busy, setBusy] = useState(false);
   if (error) return <ErrorBox error={error} />;
   if (!data) return <Loading />;
-  const [vips, nodes, ifs] = data;
+  const [vips, nodes, allIfs] = data;
+  const ifs = allIfs.find((n) => n.self)?.interfaces ?? [];
+  // Other nodes we could read that lack an interface: they cannot take over a VIP on it.
+  const missingOn = (name: string) => allIfs.filter((n) => !n.self && !n.error && !n.interfaces.some((i) => i.name === name)).map((n) => n.node);
+  const shown = allIfs.find((n) => n.node === tab) ?? allIfs[0];
   const byName = new Map(ifs.map((i) => [i.name, i]));
   const nodeNames = [nodes.self.name, ...(nodes.peers ?? []).map((p) => p.name)];
   const nextVRID = Math.max(50, ...vips.map((v) => v.vrid)) + 1;
@@ -91,7 +97,8 @@ export default function VIPs() {
               <tbody>{vips.map((v) => (
                 <tr key={v.id}>
                   <td><div className="mono" style={{ fontSize: 13, color: '#fff' }}>{v.address}</div><div className="dim" style={{ fontSize: 11.5 }}>{v.label}</div></td>
-                  <td><span className="mono muted">{v.interface}</span>{byName.get(v.interface)?.label && <div className="dim" style={{ fontSize: 11.5 }}>{byName.get(v.interface)!.label}</div>}</td><td className="mono">{v.vrid}</td>
+                  <td><span className="mono muted">{v.interface}</span>{byName.get(v.interface)?.label && <div className="dim" style={{ fontSize: 11.5 }}>{byName.get(v.interface)!.label}</div>}
+                    {missingOn(v.interface).length > 0 && <div style={{ fontSize: 11.5, color: '#fbbf24' }}>Missing on {missingOn(v.interface).join(', ')}</div>}</td><td className="mono">{v.vrid}</td>
                   <td className="muted">{v.preferred_node || nodes.self.name + ' (primary)'}</td>
                   <td>{v.hosts.length ? <span title={v.hosts.join('\n')}>{v.hosts.length}</span> : <span className="dim">0</span>}</td>
                   <td>{v.local ? <Badge kind="g">● Held here</Badge> : <Badge kind="n">Not held</Badge>}</td>
@@ -123,6 +130,7 @@ export default function VIPs() {
               </Field>
               {!byName.has(edit.interface) && <Field label="Interface name" help="Not present on this node. Interface names must be the same on every node.">
                 <input className="input mono" value={edit.interface} placeholder="eth2" onChange={(e) => setEdit({ ...edit, interface: e.target.value })} /></Field>}
+              {edit.interface && missingOn(edit.interface).length > 0 && <div className="warnbox">{missingOn(edit.interface).join(', ')} has no {edit.interface}, so it cannot take over this VIP. Add the same NIC on the same bridge to it in Proxmox.</div>}
               <Field label="VRRP ID"><input className="input mono" type="number" value={edit.vrid} onChange={(e) => setEdit({ ...edit, vrid: +e.target.value })} /></Field>
               {nodeNames.length > 1 && <Field label="Preferred node"><Seg value={edit.preferred_node} onChange={(v) => setEdit({ ...edit, preferred_node: v })}
                 options={[{ v: '', label: 'Primary' }, ...nodeNames.map((n) => ({ v: n, label: n }))]} /></Field>}
@@ -138,14 +146,15 @@ export default function VIPs() {
         )}
       </div>
       <div className="card" style={{ marginTop: 16 }}>
-        <div className="ch"><h3>Interfaces on {nodes.self.name}</h3></div>
-        <div className="cb muted" style={{ paddingBottom: 0 }}>Label each NIC so it is easy to pick. The MAC matches the one shown in Proxmox under the container's Network tab, which tells you which bridge it is on. Interface names must be the same on every node.</div>
+        <div className="ch"><h3>Interfaces</h3>{allIfs.length > 1 && <Seg value={shown.node} onChange={setTab} options={allIfs.map((n) => ({ v: n.node, label: n.node }))} />}</div>
+        <div className="cb muted" style={{ paddingBottom: 0 }}>Label each NIC so it is easy to pick. The MAC matches the one shown in Proxmox under the container's Network tab, which tells you which bridge it is on. Interface names must be the same on every node, so each VIP's NIC needs to exist on all of them.</div>
+        {shown.error && <div className="cb"><div className="err">{shown.error}</div></div>}
         <table>
           <thead><tr><th>Interface</th><th style={{ width: 240 }}>Label</th><th>Addresses</th><th>MAC</th><th>VIPs</th></tr></thead>
-          <tbody>{ifs.map((i) => (
+          <tbody>{shown.interfaces.map((i) => (
             <tr key={i.name}>
               <td><span className="mono" style={{ color: '#fff' }}>{i.name}</span> {i.up ? <Badge kind="g">up</Badge> : <Badge kind="b">down</Badge>}</td>
-              <td><LabelInput iface={i} onSaved={reload} /></td>
+              <td><LabelInput key={shown.node + i.name} iface={i} node={shown.node} onSaved={reload} /></td>
               <td className="mono muted">{i.addrs.length ? i.addrs.join(', ') : <span className="dim">none</span>}</td>
               <td className="mono dim">{i.mac || '—'}</td>
               <td className="mono muted">{i.vips.length ? i.vips.join(', ') : <span className="dim">—</span>}</td>
