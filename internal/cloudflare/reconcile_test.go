@@ -2,6 +2,8 @@ package cloudflare
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/joshuadouch/halyard/internal/model"
@@ -60,6 +62,7 @@ type fakeDNS struct {
 	created []DNSRecord
 	updated []DNSRecord
 	deleted []string
+	failOn  string
 }
 
 func (f *fakeDNS) Zones(context.Context) ([]Zone, error) { return f.zones, nil }
@@ -67,6 +70,9 @@ func (f *fakeDNS) DNSRecords(_ context.Context, z string) ([]DNSRecord, error) {
 	return f.records[z], nil
 }
 func (f *fakeDNS) CreateDNS(_ context.Context, _ string, r DNSRecord) error {
+	if r.Name == f.failOn {
+		return errors.New("10000 Authentication error")
+	}
 	f.created = append(f.created, r)
 	return nil
 }
@@ -142,5 +148,53 @@ func TestZoneForPicksLongestMatch(t *testing.T) {
 	}
 	if _, ok := ZoneFor(zones, "example.org"); ok {
 		t.Error("matched an unrelated zone")
+	}
+}
+
+func TestPlanPublicUsesVIPAddress(t *testing.T) {
+	vips := []model.VIP{{ID: "pub", Address: "198.51.100.10/29"}, {ID: "priv", Address: "10.0.10.10/24"}}
+	hosts := []model.Host{
+		{Hostnames: []string{"a.example.com"}, VIPID: "pub", HTTPSPort: 443, Exposure: model.ExposurePublic, PublishDNS: true, Enabled: true},
+		{Hostnames: []string{"b.example.com"}, VIPID: "priv", HTTPSPort: 443, Exposure: model.ExposurePublic, PublishDNS: true, Enabled: true},
+	}
+	// No WAN address: the public VIP publishes, the private one explains why not.
+	d := Plan(PlanInput{Hosts: hosts, VIPs: vips})
+	if len(d.Records) != 1 || d.Records[0].Content != "198.51.100.10" || !d.Records[0].Proxied {
+		t.Fatalf("records = %+v", d.Records)
+	}
+	if len(d.Notes) != 1 || !strings.Contains(d.Notes[0], "b.example.com") {
+		t.Fatalf("notes = %v", d.Notes)
+	}
+	// With a WAN address, the private VIP uses it and the public VIP still uses its own.
+	d = Plan(PlanInput{Hosts: hosts, VIPs: vips, Settings: model.CloudflareSettings{PublicIP: "203.0.113.5"}})
+	got := map[string]string{}
+	for _, r := range d.Records {
+		got[r.Name] = r.Content
+	}
+	if got["a.example.com"] != "198.51.100.10" || got["b.example.com"] != "203.0.113.5" {
+		t.Fatalf("records = %v", got)
+	}
+}
+
+func TestReconcileDNSContinuesPastErrors(t *testing.T) {
+	m := ManagedComment
+	f := &fakeDNS{zones: []Zone{{ID: "z1", Name: "example.com"}}, records: map[string][]DNSRecord{}, failOn: "a.example.com"}
+	desired := []DNSRecord{
+		{Type: "A", Name: "a.example.com", Content: "198.51.100.10", Comment: m},
+		{Type: "A", Name: "b.example.com", Content: "198.51.100.10", Comment: m},
+	}
+	_, states, err := ReconcileDNS(context.Background(), f, desired, false)
+	if err == nil || !strings.Contains(err.Error(), "a.example.com") {
+		t.Fatalf("expected an error naming a.example.com, got %v", err)
+	}
+	if len(f.created) != 1 || f.created[0].Name != "b.example.com" {
+		t.Fatalf("b.example.com should still be created: %+v", f.created)
+	}
+	st := map[string]string{}
+	for _, s := range states {
+		st[s.Desired.Name] = s.Status
+	}
+	if st["a.example.com"] != "error" || st["b.example.com"] != "in_sync" {
+		t.Fatalf("states = %v", st)
 	}
 }

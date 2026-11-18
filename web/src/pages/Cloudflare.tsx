@@ -74,7 +74,7 @@ export default function Cloudflare() {
               <input className="input mono" type="password" value={token} placeholder={data.token_set ? '•••••••• (saved; paste to replace)' : 'paste token'} onChange={(e) => setToken(e.target.value)} />
             </Field>
             <Field label="Account ID" help="Filled in from your zones if left blank."><input className="input mono" value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })} /></Field>
-            <Field label="Public IP for “Public” hosts" help="Your WAN address. Proxied A records point here."><input className="input mono" value={form.public_ip} onChange={(e) => setForm({ ...form, public_ip: e.target.value })} placeholder="203.0.113.24" /></Field>
+            <Field label="WAN address for private VIPs (optional)" help="Public hosts point at their VIP's own address. Only needed when a Public host's VIP is a private address behind NAT: its record points here instead."><input className="input mono" value={form.public_ip} onChange={(e) => setForm({ ...form, public_ip: e.target.value })} placeholder="203.0.113.24" /></Field>
           </div></div>
           <div className="card" style={{ flex: 1 }}><div className="ch"><h3>Certificates & UI</h3></div><div className="cb">
             <Field label="ACME account email"><input className="input" value={form.acme_email} onChange={(e) => setForm({ ...form, acme_email: e.target.value })} /></Field>
@@ -116,6 +116,7 @@ export default function Cloudflare() {
       {tab === 'dns' && (
         <div className="card">
           <div className="ch"><h3>Managed DNS records</h3><span className="muted" style={{ fontSize: 12 }}>{report?.time ? `${report.dry_run ? 'preview' : 'checked'} ${ago(report.time)}` : 'run a reconcile to check'}</span></div>
+          {report?.error && <div className="cb" style={{ paddingBottom: 0 }}><div className="err mono">{report.error}</div></div>}
           {records.length === 0 ? <div className="empty">No managed records. Hosts with “Manage DNS records” on appear here.</div> :
             <table>
               <thead><tr><th>Name</th><th>Exposure</th><th>Type</th><th>Wanted</th><th>In Cloudflare</th><th>Proxied</th><th>Sync</th></tr></thead>
@@ -126,7 +127,7 @@ export default function Cloudflare() {
                   <td className="mono">{r.desired.type}</td><td className="mono muted">{r.desired.content}</td>
                   <td className="mono muted">{r.actual ? (r.actual.content === r.desired.content ? '=' : r.actual.content) : '—'}</td>
                   <td><span className={r.desired.proxied ? 'cf' : 'dim'}><Icon name="cloud" /></span></td>
-                  <td>{r.status === 'in_sync' ? <Badge kind="g"><Icon name="check" size={11} /> In sync</Badge> : r.status === 'conflict' ? <Badge kind="b">Conflict: record not owned by Halyard</Badge> : r.status === 'drift' ? <Badge kind="w">Drift</Badge> : <Badge kind="w">Missing</Badge>}</td>
+                  <td>{r.status === 'in_sync' ? <Badge kind="g"><Icon name="check" size={11} /> In sync</Badge> : r.status === 'conflict' ? <Badge kind="b">Conflict: record not owned by Halyard</Badge> : r.status === 'drift' ? <Badge kind="w">Drift</Badge> : r.status === 'error' ? <Badge kind="b">Error (see above)</Badge> : <Badge kind="w">Missing</Badge>}</td>
                 </tr>))}</tbody>
             </table>}
           {(report?.changes?.length ?? 0) > 0 && <div className="cb"><b>{report!.dry_run ? 'Would change' : 'Changes made'}</b>
