@@ -20,7 +20,7 @@ export default function AccessLists() {
   if (error) return <ErrorBox error={error} />;
   if (!data) return <Loading />;
 
-  const open = (a: AccessList) => { setErr(null); setEdit({ ...a, users: a.users.map((u) => ({ username: u.username, password: '' })), saved: a.users.map((u) => u.username) }); };
+  const open = (a: AccessList) => { setErr(null); setEdit({ id: a.id, name: a.name, allow_cidrs: a.allow_cidrs, satisfy_any: a.satisfy_any, notes: a.notes, users: a.users.map((u) => ({ username: u.username, password: '' })), saved: a.users.map((u) => u.username) }); };
   const setUser = (i: number, patch: Partial<AuthUser>) => edit && setEdit({ ...edit, users: edit.users.map((u, j) => (j === i ? { ...u, ...patch } : u)) });
   const save = async () => {
     if (!edit) return;
