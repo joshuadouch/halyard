@@ -55,6 +55,7 @@ type UpgradeInfo struct {
 	LatestURL  string        `json:"latest_url"`
 	CheckError string        `json:"check_error,omitempty"`
 	Nodes      []UpgradeNode `json:"nodes"`
+	CheckedAt  time.Time     `json:"checked_at"`
 	Job        UpgradeJob    `json:"job"`
 }
 
@@ -75,10 +76,14 @@ var insecureClient = &http.Client{Timeout: 10 * time.Second, Transport: &http.Tr
 
 // LatestRelease returns the newest published release tag (cached 10 minutes).
 func (e *Engine) LatestRelease(ctx context.Context) (string, string, error) {
+	return e.latestRelease(ctx, false)
+}
+
+func (e *Engine) latestRelease(ctx context.Context, force bool) (string, string, error) {
 	e.upgradeMu.Lock()
 	c := e.latest
 	e.upgradeMu.Unlock()
-	if time.Since(c.at) < 10*time.Minute {
+	if !force && time.Since(c.at) < 10*time.Minute {
 		return c.tag, c.url, c.err
 	}
 	tag, url, err := func() (string, string, error) {
@@ -134,14 +139,19 @@ func peerHealth(ctx context.Context, p config.Peer) (string, error) {
 	return h.Version, nil
 }
 
-// UpgradeInfo reports versions of this node and its peers.
-func (e *Engine) UpgradeInfo(ctx context.Context) UpgradeInfo {
+// UpgradeInfo reports versions of this node and its peers. refresh skips
+// the cached latest-release lookup.
+func (e *Engine) UpgradeInfo(ctx context.Context, refresh ...bool) UpgradeInfo {
 	info := UpgradeInfo{Current: e.Version}
-	if tag, url, err := e.LatestRelease(ctx); err != nil {
+	force := len(refresh) > 0 && refresh[0]
+	if tag, url, err := e.latestRelease(ctx, force); err != nil {
 		info.CheckError = err.Error()
 	} else {
 		info.Latest, info.LatestURL = tag, url
 	}
+	e.upgradeMu.Lock()
+	info.CheckedAt = e.latest.at.UTC()
+	e.upgradeMu.Unlock()
 	info.Nodes = append(info.Nodes, UpgradeNode{Name: e.Cfg.Node.Name, Version: e.Version, Reachable: true, Self: true})
 	for _, p := range e.Cfg.Cluster.Peers {
 		n := UpgradeNode{Name: p.Name, URL: p.URL}

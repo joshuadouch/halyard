@@ -10,13 +10,15 @@ interface NodesResp {
 
 interface UpNode { name: string; url: string; version: string; reachable: boolean; self: boolean; error?: string }
 interface UpJob { running: boolean; target: string; author: string; started: string; finished: string; step: string; log: string[] | null; error: string }
-interface UpInfo { current: string; latest: string; latest_url: string; check_error?: string; nodes: UpNode[]; job: UpJob }
+interface UpInfo { current: string; latest: string; latest_url: string; check_error?: string; checked_at: string; nodes: UpNode[]; job: UpJob }
 
 function Software({ primary }: { primary: boolean }) {
   const [info, setInfo] = useState<UpInfo | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [restarting, setRestarting] = useState<string>('');
-  const load = () => get<UpInfo>('/update').then((i) => { setInfo(i); setErr(null); if (i.job.step === 'self') setRestarting(i.job.target); }).catch(setErr);
+  const [checking, setChecking] = useState(false);
+  const toast = useToast();
+  const load = (refresh = false) => get<UpInfo>('/update' + (refresh ? '?refresh=1' : '')).then((i) => { setInfo(i); setErr(null); if (i.job.step === 'self') setRestarting(i.job.target); return i; }).catch((e) => { setErr(e); return null; });
   useEffect(() => { load(); }, []);
   // Poll while a job runs; while this node restarts, wait for /api/health to report the new version.
   useEffect(() => {
@@ -34,6 +36,13 @@ function Software({ primary }: { primary: boolean }) {
     return () => clearInterval(t);
   }, [restarting, info?.job.running]);
 
+  const check = async () => {
+    setChecking(true);
+    try {
+      const i = await load(true);
+      if (i) toast(i.check_error ? 'Could not reach GitHub' : i.nodes.some((n) => n.version !== i.latest) ? `${i.latest} is available` : `Up to date (${i.latest})`);
+    } finally { setChecking(false); }
+  };
   const start = async () => {
     if (!info) return;
     if (!confirm(`Upgrade every node to ${info.latest}? The standby is upgraded first; this node goes last. Traffic keeps flowing, but the UI restarts at the end.`)) return;
@@ -45,13 +54,17 @@ function Software({ primary }: { primary: boolean }) {
   return (
     <div className="card" style={{ marginTop: 16 }}>
       <div className="ch"><h3>Software</h3>
-        {primary && behind && !job.running && !restarting && <button className="btn p s" onClick={start}>Upgrade all nodes to {info.latest}</button>}
+        <div className="row" style={{ gap: 8 }}>
+          <button className="btn s" onClick={check} disabled={checking || job.running || !!restarting}>{checking ? 'Checking…' : 'Check for updates'}</button>
+          {primary && behind && !job.running && !restarting && <button className="btn p s" onClick={start}>Upgrade all nodes to {info.latest}</button>}
+        </div>
       </div>
       <div className="cb">
         <ErrorBox error={err} />
         <div className="muted" style={{ marginBottom: 12 }}>
           {info.check_error ? <>Could not check for releases: {info.check_error}</>
             : info.latest ? <>Latest release: <a href={info.latest_url} target="_blank" rel="noreferrer" className="mono">{info.latest}</a>{!behind && ' · every node is up to date'}</> : 'Checking…'}
+          {info.checked_at && !info.checked_at.startsWith('0001') && <> · checked {ago(info.checked_at)}</>}
           {!primary && <> · Start upgrades from the primary.</>}
         </div>
         <table>
