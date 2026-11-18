@@ -60,11 +60,14 @@ type Config struct {
 	// DryRun renders and validates but never reloads services. Useful for
 	// development and tests.
 	DryRun bool `yaml:"dry_run"`
+
+	// UpdateRepo is the GitHub repository releases are installed from.
+	UpdateRepo string `yaml:"update_repo"`
 }
 
 // Default returns a config with sensible defaults for a Debian install.
 func Default() *Config {
-	c := &Config{Listen: ":8443", DataDir: "/var/lib/halyard"}
+	c := &Config{Listen: ":8443", DataDir: "/var/lib/halyard", UpdateRepo: "joshuadouch/halyard"}
 	host, _ := os.Hostname()
 	c.Node.Name = host
 	c.Node.Role = "primary"

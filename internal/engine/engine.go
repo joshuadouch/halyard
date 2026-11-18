@@ -36,6 +36,12 @@ type Engine struct {
 	Runtime haproxy.Runtime
 	Log     *slog.Logger
 	Issuer  *acme.Issuer
+	// Version is the running build, e.g. v0.1.5.
+	Version string
+
+	upgradeMu  sync.Mutex
+	upgradeJob UpgradeJob
+	latest     latestCache
 
 	mu       sync.Mutex
 	cfMu     sync.Mutex
