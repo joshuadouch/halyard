@@ -42,6 +42,8 @@ case "$(uname -m)" in
 esac
 
 export DEBIAN_FRONTEND=noninteractive
+# Use a locale that always exists, so apt and perl do not warn over SSH.
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
 
 # Fail instead of hanging when a mirror is slow, and stay on IPv4 when this
 # machine has an IPv6 address but no IPv6 route out (common on LXC with SLAAC).
