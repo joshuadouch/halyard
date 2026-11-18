@@ -6,7 +6,7 @@ import (
 )
 
 func (s *Server) updateInfo(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, s.Engine.UpgradeInfo(r.Context()))
+	writeJSON(w, 200, s.Engine.UpgradeInfo(r.Context(), r.URL.Query().Get("refresh") == "1"))
 }
 
 func (s *Server) startUpdate(w http.ResponseWriter, r *http.Request) {
