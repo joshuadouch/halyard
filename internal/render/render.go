@@ -77,6 +77,10 @@ func Render(in Input) (*Output, error) {
 		poolNames[p.Name] = true
 		pools[p.ID] = p
 	}
+	acls := map[string]model.AccessList{}
+	for _, a := range in.Snap.AccessLists {
+		acls[a.ID] = a
+	}
 
 	// Group hosts into listeners by VIP + port + kind.
 	lmap := map[string]*listener{}
@@ -107,6 +111,15 @@ func Render(in Input) (*Output, error) {
 			}
 			if p.Mode != h.Mode {
 				return nil, fmt.Errorf("host %s is %s but pool %s is %s", label(h), h.Mode, p.Name, p.Mode)
+			}
+		}
+		if h.AccessListID != "" {
+			a, ok := acls[h.AccessListID]
+			if !ok {
+				return nil, fmt.Errorf("host %s uses an access list that no longer exists", label(h))
+			}
+			if h.Mode == model.ModeTCP && len(a.Users) > 0 {
+				return nil, fmt.Errorf("host %s is TCP, which cannot ask for a password; access list %s has users", label(h), a.Name)
 			}
 		}
 		if h.Mode == model.ModeTCP {
@@ -182,6 +195,16 @@ func Render(in Input) (*Output, error) {
 	}
 	w("    default-server init-addr last,libc,none")
 	w("")
+	for _, a := range in.Snap.AccessLists {
+		if len(a.Users) == 0 {
+			continue
+		}
+		w("userlist %s", userlistName(a))
+		for _, u := range a.Users {
+			w("    user %s password %s", u.Username, u.PasswordHash)
+		}
+		w("")
+	}
 	if hc.StatsListen != "" {
 		w("frontend halyard_stats")
 		w("    bind %s", hc.StatsListen)
@@ -210,6 +233,9 @@ func Render(in Input) (*Output, error) {
 			w("    bind %s:%d", addr, l.port)
 			if len(h.AllowCIDRs) > 0 {
 				w("    tcp-request connection reject if !{ src %s }", strings.Join(h.AllowCIDRs, " "))
+			}
+			if a, ok := acls[h.AccessListID]; ok && len(a.AllowCIDRs) > 0 {
+				w("    tcp-request connection reject if !{ src %s }", strings.Join(a.AllowCIDRs, " "))
 			}
 			w("    default_backend %s", beName(p))
 			w("")
@@ -266,6 +292,9 @@ func Render(in Input) (*Output, error) {
 					w("    http-request deny deny_status 403 if %s !{ ssl_c_used }", acl)
 					w("    http-request deny deny_status 403 if %s !{ ssl_c_verify 0 }", acl)
 				}
+				if a, ok := acls[h.AccessListID]; ok {
+					writeAccess(w, acl, a)
+				}
 				if l.kind == "https" && h.HSTS {
 					w("    http-response set-header Strict-Transport-Security \"max-age=31536000\" if %s", acl)
 				}
@@ -305,6 +334,31 @@ func Render(in Input) (*Output, error) {
 	}
 	out.Keepalived = ka
 	return out, nil
+}
+
+func userlistName(a model.AccessList) string { return "ul_" + sanitize(a.ID) }
+
+// writeAccess renders an access list's checks for one host's ACL. A client
+// with valid credentials has them removed before the request reaches the
+// backend.
+func writeAccess(w func(string, ...any), acl string, a model.AccessList) {
+	ips := strings.Join(a.AllowCIDRs, " ")
+	ul := userlistName(a)
+	const realm = "http-request auth realm Restricted"
+	switch {
+	case len(a.Users) == 0:
+		w("    http-request deny deny_status 403 if %s !{ src %s }", acl, ips)
+	case len(a.AllowCIDRs) == 0:
+		w("    %s if %s !{ http_auth(%s) }", realm, acl, ul)
+	case a.SatisfyAny:
+		w("    %s if %s !{ src %s } !{ http_auth(%s) }", realm, acl, ips, ul)
+	default:
+		w("    http-request deny deny_status 403 if %s !{ src %s }", acl, ips)
+		w("    %s if %s !{ http_auth(%s) }", realm, acl, ul)
+	}
+	if len(a.Users) > 0 {
+		w("    http-request del-header Authorization if %s { http_auth(%s) }", acl, ul)
+	}
 }
 
 func label(h model.Host) string {

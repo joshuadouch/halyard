@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Cert, CFView, del, get, Host, Pool, post, put, VIP } from '../api';
+import { AccessListRow, Cert, CFView, del, get, Host, Pool, post, put, VIP } from '../api';
 import { Chips, ErrorBox, Field, Icon, Loading, Seg, Toggle, useToast } from '../ui';
 
 const blank = (vip: string, pool: string): Host => ({
   id: '', hostnames: [], vip_id: vip, mode: 'http', http_port: 80, https_port: 443, tcp_port: 0, force_https: true,
   hsts: false, certificate_id: '', routes: [{ path_prefix: '', pool_id: pool }], exposure: 'lan', publish_dns: true,
-  require_aop: false, allow_cidrs: [], enabled: true, notes: '',
+  require_aop: false, allow_cidrs: [], access_list_id: '', enabled: true, notes: '',
 });
 
 // Same rule as the server: *.x covers exactly one label under x.
@@ -19,6 +19,29 @@ function covers(domain: string, name: string): boolean {
   return label !== '' && !label.includes('.');
 }
 
+function accessSummary(a: AccessListRow): string {
+  const ips = a.allow_cidrs.length, users = a.users.length;
+  if (ips && users) return a.satisfy_any ? 'an allowed IP or a password' : 'an allowed IP and a password';
+  return users ? 'a password' : 'an allowed IP';
+}
+
+function AccessPicker({ h, acls, set }: { h: Host; acls: AccessListRow[]; set: (p: Partial<Host>) => void }) {
+  const usable = h.mode === 'tcp' ? acls.filter((a) => a.users.length === 0) : acls;
+  const cur = acls.find((a) => a.id === h.access_list_id);
+  return (
+    <Field label="Access list" help={
+      cur ? <>Visitors need {accessSummary(cur)}.{h.mode === 'http' && cur.users.length > 0 && !h.https_port ? ' This host has no HTTPS port, so passwords would cross the network in the clear.' : ''}</>
+        : h.mode === 'tcp' ? <>TCP hosts can use lists with allowed IPs only. <Link to="/access">Manage access lists</Link></>
+        : <>Require allowed IPs, a basic auth login, or both. <Link to="/access">Manage access lists</Link></>}>
+      <select className="input" value={h.access_list_id} onChange={(e) => set({ access_list_id: e.target.value })}>
+        <option value="">None (public)</option>
+        {usable.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        {cur && !usable.includes(cur) && <option value={cur.id}>{cur.name} (has users, not usable on TCP)</option>}
+      </select>
+    </Field>
+  );
+}
+
 export default function HostEditor() {
   const { id = 'new' } = useParams();
   const isNew = id === 'new';
@@ -29,6 +52,7 @@ export default function HostEditor() {
   const [pools, setPools] = useState<Pool[]>([]);
   const [certs, setCerts] = useState<Cert[]>([]);
   const [cf, setCf] = useState<CFView | null>(null);
+  const [acls, setAcls] = useState<AccessListRow[]>([]);
   const [err, setErr] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [newCert, setNewCert] = useState(isNew);
@@ -40,6 +64,7 @@ export default function HostEditor() {
         setH(host ?? blank(v[0]?.id ?? '', p[0]?.id ?? ''));
       }).catch(setErr);
     get<CFView>('/cloudflare?light=1').then(setCf).catch(() => {});
+    get<AccessListRow[]>('/access-lists').then(setAcls).catch(() => {});
   }, [id, isNew]);
 
   if (!h) return err ? <ErrorBox error={err} /> : <Loading />;
@@ -142,6 +167,7 @@ export default function HostEditor() {
                   <Chips mono values={h.allow_cidrs ?? []} onChange={(v) => set({ allow_cidrs: v })} placeholder="e.g. 10.0.0.0/8" />
                 </Field>
               </div>
+              <AccessPicker h={h} acls={acls} set={set} />
               {canRequest && (acmeReady
                 ? <Toggle on={newCert} onChange={setNewCert} label="Request a new certificate for these names"
                     help={<>Let's Encrypt via Cloudflare DNS, covering <span className="mono">{h.hostnames.join(', ')}</span>. Requested when you save; the host uses it automatically once issued.</>} />
@@ -153,6 +179,7 @@ export default function HostEditor() {
                 help="Rejects any TLS connection that does not present Cloudflare's client certificate, so nobody can bypass Cloudflare by hitting your IP directly. Turn AOP on for the zone on the Cloudflare page first." />}
             </>}
             {h.mode === 'tcp' && <Field label="Allow only these client IPs"><Chips mono values={h.allow_cidrs ?? []} onChange={(v) => set({ allow_cidrs: v })} placeholder="e.g. 10.0.0.0/8" /></Field>}
+            {h.mode === 'tcp' && <AccessPicker h={h} acls={acls} set={set} />}
             <Toggle on={h.enabled} onChange={(v) => set({ enabled: v })} label="Enabled" />
             <Field label="Notes"><input className="input" value={h.notes} onChange={(e) => set({ notes: e.target.value })} /></Field>
           </div></div>

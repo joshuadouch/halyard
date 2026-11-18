@@ -96,6 +96,11 @@ func (s *Server) Handler() http.Handler {
 	a("DELETE /api/pools/{id}", s.deletePool)
 	a("POST /api/pools/{id}/members/{name}/state", s.memberState)
 
+	a("GET /api/access-lists", s.listAccessLists)
+	a("POST /api/access-lists", s.saveAccessList)
+	a("PUT /api/access-lists/{id}", s.saveAccessList)
+	a("DELETE /api/access-lists/{id}", s.deleteAccessList)
+
 	a("GET /api/certs", s.listCerts)
 	a("POST /api/certs", s.createCert)
 	a("POST /api/certs/{id}/renew", s.renewCert)

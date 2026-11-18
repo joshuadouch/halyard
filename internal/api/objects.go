@@ -188,6 +188,9 @@ func (s *Server) saveHost(w http.ResponseWriter, r *http.Request) {
 				return errors.New("a route points at a pool that does not exist")
 			}
 		}
+		if err := s.checkHostAccess(ctx, h); err != nil {
+			return err
+		}
 		if h.CertificateID != "" {
 			var c model.Certificate
 			if err := s.Store.Get(ctx, store.KindCert, h.CertificateID, &c); err != nil {
