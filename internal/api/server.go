@@ -56,6 +56,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/login", s.login)
 	mux.HandleFunc("POST /api/logout", s.logout)
 	mux.HandleFunc("POST /api/cluster/sync", s.clusterSync)
+	mux.HandleFunc("POST /api/cluster/interfaces", s.clusterInterfaces)
 
 	// Authenticated endpoints.
 	a := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireAuth(h)) }
@@ -78,6 +79,7 @@ func (s *Server) Handler() http.Handler {
 
 	a("GET /api/vips", s.listVIPs)
 	a("GET /api/interfaces", s.listInterfaces)
+	a("GET /api/nodes/interfaces", s.allInterfaces)
 	a("PUT /api/interfaces/{name}/label", s.setInterfaceLabel)
 	a("POST /api/vips", s.saveVIP)
 	a("PUT /api/vips/{id}", s.saveVIP)
