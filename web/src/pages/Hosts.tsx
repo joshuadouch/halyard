@@ -30,7 +30,7 @@ export default function Hosts() {
                     <td><b>{h.hostnames[0] ?? '(tcp)'}</b>{h.hostnames.length > 1 && <span className="dim"> +{h.hostnames.length - 1}</span>}</td>
                     <td className="mono">{v ? v.address.split('/')[0] : <span style={{ color: '#fca5a5' }}>missing</span>}</td>
                     <td className="mono muted">{h.mode === 'tcp' ? `tcp ${h.tcp_port}` : [h.https_port && `${h.https_port} TLS`, h.http_port && (h.force_https ? `${h.http_port} → TLS` : `${h.http_port}`)].filter(Boolean).join(' · ')}</td>
-                    <td><ExposureBadge e={h.exposure} />{h.require_aop && <> <Badge kind="a">AOP</Badge></>}</td>
+                    <td><ExposureBadge e={h.exposure} />{h.require_aop && <> <Badge kind="a">AOP</Badge></>}{h.access_list_id && <> <Badge kind="w">Restricted</Badge></>}</td>
                     <td className="muted">{h.routes.map((r) => (r.path_prefix || '/*') + ' → ' + pool(r.pool_id)).join(', ')}</td>
                     <td>{h.enabled ? <Badge kind="g">Enabled</Badge> : <Badge kind="n">Disabled</Badge>}</td>
                   </tr>

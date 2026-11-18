@@ -14,18 +14,19 @@ import Cloudflare from './pages/Cloudflare';
 import Nodes from './pages/Nodes';
 import History from './pages/History';
 import Settings from './pages/Settings';
+import AccessLists from './pages/AccessLists';
 
 export interface Me { user: User; node: string; role: string; version: string; has_password: boolean }
 
 const nav = [
   ['Overview'], ['/', 'dash', 'Dashboard'],
   ['Traffic'], ['/hosts', 'host', 'Hosts'], ['/pools', 'pool', 'Pools'], ['/vips', 'vip', 'VIPs'],
-  ['Security'], ['/certificates', 'cert', 'Certificates'],
+  ['Security'], ['/certificates', 'cert', 'Certificates'], ['/access', 'lock', 'Access lists'],
   ['Platform'], ['/cloudflare', 'cloud', 'Cloudflare'], ['/nodes', 'node', 'Nodes'], ['/history', 'hist', 'Config history'], ['/settings', 'set', 'Settings'],
 ];
 
 const titles: Record<string, string> = {
-  '': 'Dashboard', hosts: 'Hosts', pools: 'Pools', vips: 'VIPs', certificates: 'Certificates',
+  '': 'Dashboard', hosts: 'Hosts', pools: 'Pools', vips: 'VIPs', certificates: 'Certificates', access: 'Access lists',
   cloudflare: 'Cloudflare', nodes: 'Nodes', history: 'Config history', settings: 'Settings',
 };
 
@@ -68,6 +69,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
             <Route path="/pools/:id" element={<PoolDetail />} />
             <Route path="/vips" element={<VIPs />} />
             <Route path="/certificates" element={<Certificates />} />
+            <Route path="/access" element={<AccessLists />} />
             <Route path="/cloudflare" element={<Cloudflare />} />
             <Route path="/nodes" element={<Nodes />} />
             <Route path="/history" element={<History />} />

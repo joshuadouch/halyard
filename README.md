@@ -14,6 +14,8 @@ certificates.
   **maintenance** without a reload.
 - **VIPs** are floating IPs. Each one is its own VRRP instance, so different
   hostnames can live on different IPs and each can prefer a different node.
+- **Access lists** restrict hosts to allowed client IPs, a basic auth login, or
+  both (either one, or both required). One list can be shared by many hosts.
 - **TCP hosts** pass any TCP service (databases, SSH, MQTT) through a VIP.
 - **Save means apply.** Every change is rendered, checked with `haproxy -c`, and
   reloaded without dropping connections. A config HAProxy rejects is rolled back

@@ -12,8 +12,11 @@ export interface Host {
   id: string; hostnames: string[]; vip_id: string; mode: Mode; http_port: number; https_port: number;
   tcp_port: number; force_https: boolean; hsts: boolean; certificate_id: string; routes: Route[];
   exposure: Exposure; publish_dns: boolean; require_aop: boolean; allow_cidrs: string[] | null;
-  enabled: boolean; notes: string;
+  access_list_id: string; enabled: boolean; notes: string;
 }
+export interface AuthUser { username: string; password?: string }
+export interface AccessList { id: string; name: string; allow_cidrs: string[]; users: AuthUser[]; satisfy_any: boolean; notes: string }
+export interface AccessListRow extends AccessList { hosts: string[] }
 export interface Member { name: string; address: string; weight: number; backup: boolean; state: 'ready' | 'drain' | 'maint' }
 export interface HealthCheck {
   enabled: boolean; type: string; method: string; path: string; host_header: string; expect_status: string;

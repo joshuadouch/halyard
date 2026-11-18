@@ -141,4 +141,40 @@ func TestAPIFlow(t *testing.T) {
 	if code != 200 || !strings.Contains(out["haproxy"].(string), "be_web") {
 		t.Fatalf("preview: %d %v", code, out)
 	}
+
+	// Access lists: passwords are hashed, never returned, and kept when blank.
+	acl := map[string]any{"name": "office", "allow_cidrs": []string{"192.168.1.0/24"}, "satisfy_any": true,
+		"users": []map[string]any{{"username": "josh", "password": "short"}}}
+	if code, _ = c.do("POST", "/api/access-lists", acl, true); code != 400 {
+		t.Fatalf("short basic auth password accepted: %d", code)
+	}
+	acl["users"] = []map[string]any{{"username": "josh", "password": "a-long-password"}}
+	code, out = c.do("POST", "/api/access-lists", acl, true)
+	if code != 200 {
+		t.Fatalf("create access list: %d %v", code, out)
+	}
+	aclID := out["id"].(string)
+	if raw, _ := json.Marshal(out); strings.Contains(string(raw), "$6$") || strings.Contains(string(raw), "a-long-password") {
+		t.Fatalf("access list response leaks a password: %s", raw)
+	}
+	acl["users"] = []map[string]any{{"username": "josh", "password": ""}}
+	if code, out = c.do("PUT", "/api/access-lists/"+aclID, acl, true); code != 200 {
+		t.Fatalf("resave access list with blank password: %d %v", code, out)
+	}
+	acl["users"] = []map[string]any{{"username": "new", "password": ""}}
+	if code, _ = c.do("PUT", "/api/access-lists/"+aclID, acl, true); code != 400 {
+		t.Fatalf("new user without a password accepted: %d", code)
+	}
+	host["access_list_id"] = aclID
+	host["hostnames"] = []string{"office.example.test"}
+	if code, out = c.do("POST", "/api/hosts", host, true); code != 200 {
+		t.Fatalf("host with access list: %d %v", code, out)
+	}
+	code, out = c.do("GET", "/api/preview", nil, false)
+	if cfg := out["haproxy"].(string); code != 200 || !strings.Contains(cfg, "user josh password $6$") || !strings.Contains(cfg, "http_auth(ul_") {
+		t.Fatalf("preview lacks the access list: %d %v", code, out)
+	}
+	if code, _ = c.do("DELETE", "/api/access-lists/"+aclID, nil, true); code != 400 {
+		t.Fatalf("deleted an access list a host still uses: %d", code)
+	}
 }

@@ -25,6 +25,7 @@ const (
 	KindHost = "host"
 	KindPool = "pool"
 	KindCert = "cert"
+	KindACL  = "acl"
 )
 
 // Store wraps the SQLite database.
@@ -160,6 +161,13 @@ func (s *Store) Hosts(ctx context.Context) ([]model.Host, error) {
 // Pools lists pools ordered by name.
 func (s *Store) Pools(ctx context.Context) ([]model.Pool, error) {
 	v, err := list[model.Pool](ctx, s, KindPool)
+	sort.Slice(v, func(i, j int) bool { return v[i].Name < v[j].Name })
+	return v, err
+}
+
+// AccessLists lists access lists ordered by name.
+func (s *Store) AccessLists(ctx context.Context) ([]model.AccessList, error) {
+	v, err := list[model.AccessList](ctx, s, KindACL)
 	sort.Slice(v, func(i, j int) bool { return v[i].Name < v[j].Name })
 	return v, err
 }
@@ -310,6 +318,8 @@ type Snapshot struct {
 	Hosts []model.Host        `json:"hosts"`
 	Pools []model.Pool        `json:"pools"`
 	Certs []model.Certificate `json:"certs"`
+	// AccessLists is nil in snapshots taken before access lists existed.
+	AccessLists []model.AccessList `json:"access_lists,omitempty"`
 }
 
 // TakeSnapshot reads all objects.
@@ -328,6 +338,9 @@ func (s *Store) TakeSnapshot(ctx context.Context) (Snapshot, error) {
 	if snap.Certs, err = s.Certs(ctx); err != nil {
 		return snap, err
 	}
+	if snap.AccessLists, err = s.AccessLists(ctx); err != nil {
+		return snap, err
+	}
 	return snap, nil
 }
 
@@ -338,7 +351,7 @@ func (s *Store) RestoreSnapshot(ctx context.Context, snap Snapshot, withCerts bo
 		return err
 	}
 	defer tx.Rollback()
-	kinds := []string{KindVIP, KindHost, KindPool}
+	kinds := []string{KindVIP, KindHost, KindPool, KindACL}
 	if withCerts {
 		kinds = append(kinds, KindCert)
 	}
@@ -364,6 +377,11 @@ func (s *Store) RestoreSnapshot(ctx context.Context, snap Snapshot, withCerts bo
 	}
 	for _, v := range snap.Pools {
 		if err := put(KindPool, v.ID, v); err != nil {
+			return err
+		}
+	}
+	for _, v := range snap.AccessLists {
+		if err := put(KindACL, v.ID, v); err != nil {
 			return err
 		}
 	}

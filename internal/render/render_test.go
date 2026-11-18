@@ -38,7 +38,11 @@ func testInput(t *testing.T, dir string) Input {
 		{ID: "h2", Hostnames: []string{"*.lab.example.com"}, VIPID: "v1", HTTPPort: 80, HTTPSPort: 443,
 			Routes: []model.Route{{PathPrefix: "/", PoolID: "p1"}}, AllowCIDRs: []string{"10.0.0.0/8"}, Enabled: true},
 		{ID: "h3", Hostnames: []string{"db.example.com"}, VIPID: "v1", Mode: model.ModeTCP, TCPPort: 5432,
-			Routes: []model.Route{{PoolID: "p3"}}, Enabled: true},
+			Routes: []model.Route{{PoolID: "p3"}}, AccessListID: "a3", Enabled: true},
+		{ID: "h4", Hostnames: []string{"office.example.com"}, VIPID: "v1", HTTPPort: 80, HTTPSPort: 443, AccessListID: "a1",
+			Routes: []model.Route{{PoolID: "p1"}}, Enabled: true},
+		{ID: "h5", Hostnames: []string{"private.example.com"}, VIPID: "v1", HTTPSPort: 443, AccessListID: "a2",
+			Routes: []model.Route{{PoolID: "p1"}}, Enabled: true},
 	}
 	for i := range hosts {
 		if err := hosts[i].Normalize(); err != nil {
@@ -51,8 +55,19 @@ func testInput(t *testing.T, dir string) Input {
 			t.Fatalf("normalize pool %s: %v", pools[i].Name, err)
 		}
 	}
+	hash := "$6$saltstring$svn8UoSVapNtMuq1ukKS4tPQd8iKwSMHWjl/O817G3uBnIFNjnQJuesI68u4OTLiBFdcbYEdFCoEOfaS35inz1"
+	acls := []model.AccessList{
+		{ID: "a1", Name: "office", AllowCIDRs: []string{"192.168.1.0/24"}, Users: []model.AuthUser{{Username: "josh", PasswordHash: hash}}, SatisfyAny: true},
+		{ID: "a2", Name: "strict", AllowCIDRs: []string{"192.168.1.0/24"}, Users: []model.AuthUser{{Username: "ops", PasswordHash: hash}}},
+		{ID: "a3", Name: "lan only", AllowCIDRs: []string{"10.0.0.0/8"}},
+	}
+	for i := range acls {
+		if err := acls[i].Normalize(); err != nil {
+			t.Fatalf("normalize access list %s: %v", acls[i].Name, err)
+		}
+	}
 	cf := model.CloudflareSettings{RealIP: true}
-	return Input{Snap: store.Snapshot{VIPs: []model.VIP{vip}, Hosts: hosts, Pools: pools}, Config: cfg, Cloudflare: cf, Paths: DefaultPaths(cfg)}
+	return Input{Snap: store.Snapshot{VIPs: []model.VIP{vip}, Hosts: hosts, Pools: pools, AccessLists: acls}, Config: cfg, Cloudflare: cf, Paths: DefaultPaths(cfg)}
 }
 
 func TestRender(t *testing.T) {
@@ -79,6 +94,13 @@ func TestRender(t *testing.T) {
 		"ssl_c_used",
 		"Strict-Transport-Security",
 		"default_backend halyard_notfound",
+		"userlist ul_a1",
+		"user josh password $6$saltstring$",
+		"http-request auth realm Restricted if h_h4 !{ src 192.168.1.0/24 } !{ http_auth(ul_a1) }",
+		"http-request deny deny_status 403 if h_h5 !{ src 192.168.1.0/24 }",
+		"http-request auth realm Restricted if h_h5 !{ http_auth(ul_a2) }",
+		"http-request del-header Authorization if h_h5 { http_auth(ul_a2) }",
+		"tcp-request connection reject if !{ src 10.0.0.0/8 }",
 	} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("haproxy.cfg is missing %q", want)
@@ -126,6 +148,18 @@ func TestRender(t *testing.T) {
 	must(cfgPath, []byte(cfg))
 	if b, err := exec.Command(bin, "-c", "-q", "-f", cfgPath).CombinedOutput(); err != nil {
 		t.Fatalf("haproxy -c failed: %v\n%s\n---\n%s", err, b, cfg)
+	}
+}
+
+func TestRenderRejectsPasswordOnTCP(t *testing.T) {
+	in := testInput(t, t.TempDir())
+	in.Snap.Hosts[2].AccessListID = "a1"
+	if _, err := Render(in); err == nil || !strings.Contains(err.Error(), "cannot ask for a password") {
+		t.Fatalf("want TCP password error, got %v", err)
+	}
+	in.Snap.Hosts[2].AccessListID = "gone"
+	if _, err := Render(in); err == nil {
+		t.Fatal("want missing access list error")
 	}
 }
 

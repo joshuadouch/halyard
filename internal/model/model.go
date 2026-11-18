@@ -70,9 +70,10 @@ type Host struct {
 	CertificateID string   `json:"certificate_id"` // empty = pick by SNI from all certs
 	Routes        []Route  `json:"routes"`
 	Exposure      Exposure `json:"exposure"`
-	PublishDNS    bool     `json:"publish_dns"` // create/maintain DNS records in Cloudflare
-	RequireAOP    bool     `json:"require_aop"` // require Cloudflare Authenticated Origin Pulls
-	AllowCIDRs    []string `json:"allow_cidrs"` // empty = allow all (checked against real client IP)
+	PublishDNS    bool     `json:"publish_dns"`    // create/maintain DNS records in Cloudflare
+	RequireAOP    bool     `json:"require_aop"`    // require Cloudflare Authenticated Origin Pulls
+	AllowCIDRs    []string `json:"allow_cidrs"`    // empty = allow all (checked against real client IP)
+	AccessListID  string   `json:"access_list_id"` // optional reusable access list
 	Enabled       bool     `json:"enabled"`
 	Notes         string   `json:"notes"`
 }
@@ -368,6 +369,68 @@ func (h *Host) Normalize() error {
 		if _, _, err := net.ParseCIDR(c); err != nil && net.ParseIP(c) == nil {
 			return fmt.Errorf("invalid allow entry %q", c)
 		}
+	}
+	return nil
+}
+
+// AccessList is a reusable set of rules a host can require: allowed client
+// IPs, HTTP basic auth users, or both.
+type AccessList struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	AllowCIDRs []string   `json:"allow_cidrs"`
+	Users      []AuthUser `json:"users"`
+	// SatisfyAny lets a client in when it passes either rule (an allowed IP
+	// skips the password). Off means it must pass both.
+	SatisfyAny bool   `json:"satisfy_any"`
+	Notes      string `json:"notes"`
+}
+
+// AuthUser is a basic auth login. Password is only accepted on input and is
+// replaced by PasswordHash (SHA-512 crypt) before storing.
+type AuthUser struct {
+	Username     string `json:"username"`
+	Password     string `json:"password,omitempty"`
+	PasswordHash string `json:"password_hash,omitempty"`
+}
+
+var authUserRe = regexp.MustCompile(`^[A-Za-z0-9._@-]{1,64}$`)
+
+// Normalize trims and validates the list. Users must already be hashed.
+func (a *AccessList) Normalize() error {
+	a.Name = strings.TrimSpace(a.Name)
+	if a.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	var cidrs []string
+	for _, c := range a.AllowCIDRs {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(c); err != nil && net.ParseIP(c) == nil {
+			return fmt.Errorf("invalid allow entry %q", c)
+		}
+		cidrs = append(cidrs, c)
+	}
+	a.AllowCIDRs = cidrs
+	seen := map[string]bool{}
+	for i := range a.Users {
+		u := &a.Users[i]
+		u.Username = strings.TrimSpace(u.Username)
+		if !authUserRe.MatchString(u.Username) {
+			return fmt.Errorf("username %q may only use letters, digits, . _ @ and -", u.Username)
+		}
+		if seen[u.Username] {
+			return fmt.Errorf("username %s is listed twice", u.Username)
+		}
+		seen[u.Username] = true
+		if u.PasswordHash == "" {
+			return fmt.Errorf("set a password for %s", u.Username)
+		}
+	}
+	if len(a.AllowCIDRs) == 0 && len(a.Users) == 0 {
+		return fmt.Errorf("add at least one allowed IP or user")
 	}
 	return nil
 }
