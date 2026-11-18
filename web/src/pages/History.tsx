@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { fmtDate, fmtTime, get, post, Revision } from '../api';
-import { Badge, ErrorBox, Loading, useLoad, useToast } from '../ui';
+import { Badge, ErrorBox, Icon, Loading, useLoad, useToast } from '../ui';
 
 // Minimal line diff (LCS) for config previews.
 function diff(a: string, b: string): { t: ' ' | '-' | '+'; l: string }[] {
@@ -66,9 +66,12 @@ export default function History() {
           </table>
         </div>
         {sel && (
-          <div className="card" style={{ flex: 1.3, minWidth: 0 }}>
+          <div className="card panel" style={{ flex: 1.3, minWidth: 0 }}>
             <div className="ch"><h3>Revision {sel.revision.id}</h3>
-              {sel.revision.status === 'applied' && <button className="btn s" onClick={() => rollback(sel.revision.id)}>Roll back to this</button>}</div>
+              <div className="row" style={{ gap: 8 }}>
+                {sel.revision.status === 'applied' && <button className="btn s" onClick={() => rollback(sel.revision.id)}>Roll back to this</button>}
+                <button className="btn s ghost mobile-only" onClick={() => setSel(null)} aria-label="Close"><Icon name="x" size={14} /></button>
+              </div></div>
             <div className="cb">
               {sel.revision.error && <div className="err mono">{sel.revision.error}</div>}
               <Diff a={sel.previous_haproxy} b={sel.revision.haproxy ?? ''} />
