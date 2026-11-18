@@ -105,16 +105,20 @@ func serve(cfgPath string) error {
 	if err := eng.Bootstrap(ctx); err != nil {
 		return err
 	}
-	if cfg.IsPrimary() {
-		out, _, err := eng.Render(ctx)
+	// Re-apply on every node when this version renders differently from the
+	// files on disk, so fixes in a new release take effect after an upgrade.
+	if out, _, err := eng.Render(ctx); err != nil {
+		log.Error("current state does not render; leaving HAProxy and keepalived config alone", "err", err)
+	} else {
 		cur, _ := os.ReadFile(cfg.HAProxy.ConfigPath)
-		if err != nil {
-			log.Error("current state does not render; leaving HAProxy config alone", "err", err)
-		} else if string(cur) != out.HAProxy {
-			if _, err := eng.Apply(ctx, "system", "Startup"); err != nil {
+		curKA, _ := os.ReadFile(cfg.Keepalived.ConfigPath)
+		if string(cur) != out.HAProxy || (cfg.Keepalived.Enabled && string(curKA) != out.Keepalived) {
+			if _, err := eng.Apply(ctx, "system", "Startup ("+version+")"); err != nil {
 				log.Error("startup apply failed", "err", err)
 			}
 		}
+	}
+	if cfg.IsPrimary() {
 		go eng.SyncPeers(ctx)
 		go func() {
 			if err := eng.WriteTunnelToken(ctx); err != nil {
