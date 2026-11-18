@@ -54,6 +54,12 @@ func (v VIP) IP() string {
 type Route struct {
 	PathPrefix string `json:"path_prefix"`
 	PoolID     string `json:"pool_id"`
+	// RewritePrefix, when set on a path route, replaces the matched
+	// PathPrefix before the request goes upstream: prefix /a/b with rewrite
+	// /c sends /a/b/x?q to the pool as /c/x?q.
+	RewritePrefix string `json:"rewrite_prefix,omitempty"`
+	// HostHeader, when set, replaces the Host header sent upstream.
+	HostHeader string `json:"host_header,omitempty"`
 }
 
 // Host is a set of hostnames served on one VIP.
@@ -360,6 +366,27 @@ func (h *Host) Normalize() error {
 			defaults++
 		} else if !strings.HasPrefix(r.PathPrefix, "/") || strings.ContainsAny(r.PathPrefix, " \t\"'") {
 			return fmt.Errorf("route path %q must start with / and contain no spaces or quotes", r.PathPrefix)
+		}
+		if r.RewritePrefix != "" {
+			if r.PathPrefix == "" {
+				return fmt.Errorf("the default route can't rewrite the path; add a path route instead")
+			}
+			if !strings.HasPrefix(r.RewritePrefix, "/") || strings.ContainsAny(r.RewritePrefix, " \t\"'\\") {
+				return fmt.Errorf("rewrite path %q must start with / and contain no spaces, quotes or backslashes", r.RewritePrefix)
+			}
+		}
+		r.HostHeader = strings.TrimSpace(r.HostHeader)
+		if r.HostHeader != "" {
+			if h.Mode == ModeTCP {
+				return fmt.Errorf("tcp hosts can't set an upstream Host header")
+			}
+			name := r.HostHeader
+			if hp, port, err := net.SplitHostPort(name); err == nil && port != "" {
+				name = hp
+			}
+			if !ValidHostname(name) || strings.HasPrefix(name, "*") {
+				return fmt.Errorf("upstream Host header %q is not a valid hostname", r.HostHeader)
+			}
 		}
 	}
 	if defaults > 1 {

@@ -43,6 +43,8 @@ func testInput(t *testing.T, dir string) Input {
 			Routes: []model.Route{{PoolID: "p1"}}, Enabled: true},
 		{ID: "h5", Hostnames: []string{"private.example.com"}, VIPID: "v1", HTTPSPort: 443, AccessListID: "a2",
 			Routes: []model.Route{{PoolID: "p1"}}, Enabled: true},
+		{ID: "h6", Hostnames: []string{"radar.example.com"}, VIPID: "v1", HTTPPort: 80, HTTPSPort: 443,
+			Routes: []model.Route{{PoolID: "p1"}, {PathPrefix: "/skyaware/data/aircraft.json", RewritePrefix: "/aircraft", HostHeader: "radar.internal", PoolID: "p2"}, {PathPrefix: "/old", RewritePrefix: "/", PoolID: "p2"}}, Enabled: true},
 	}
 	for i := range hosts {
 		if err := hosts[i].Normalize(); err != nil {
@@ -103,6 +105,13 @@ func TestRender(t *testing.T) {
 		"http-request del-header Authorization if h_h5 { var(txn.auth_a2) -m bool }",
 		"timeout http-keep-alive 930s",
 		"tcp-request connection reject if !{ src 10.0.0.0/8 }",
+		"http-request set-var(txn.route) int(1) if h_h6 !{ var(txn.route) -m found } { path_beg /skyaware/data/aircraft.json }",
+		"http-request set-var(txn.route) int(0) if h_h6 !{ var(txn.route) -m found }",
+		`http-request replace-path '^/skyaware/data/aircraft\.json(.*)$' '/aircraft\1' if h_h6 { var(txn.route) -m int 1 }`,
+		"http-request set-header Host radar.internal if h_h6 { var(txn.route) -m int 1 }",
+		`http-request replace-path '^/old/?(.*)$' '/\1' if h_h6 { var(txn.route) -m int 2 }`,
+		"use_backend be_api if h_h6 { var(txn.route) -m int 1 }",
+		"use_backend be_web if h_h6 { var(txn.route) -m int 0 }",
 	} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("haproxy.cfg is missing %q", want)

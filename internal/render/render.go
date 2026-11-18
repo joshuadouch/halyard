@@ -304,18 +304,7 @@ func Render(in Input) (*Output, error) {
 				if l.kind == "https" && h.HSTS {
 					w("    http-response set-header Strict-Transport-Security \"max-age=31536000\" if %s", acl)
 				}
-				for _, r := range h.Routes {
-					p := pools[r.PoolID]
-					if r.PathPrefix == "" {
-						continue
-					}
-					w("    use_backend %s if %s { path_beg %s }", beName(p), acl, r.PathPrefix)
-				}
-				for _, r := range h.Routes {
-					if r.PathPrefix == "" {
-						w("    use_backend %s if %s", beName(pools[r.PoolID]), acl)
-					}
-				}
+				writeRoutes(w, acl, h.Routes, pools)
 			}
 			w("    default_backend halyard_notfound")
 			w("")
@@ -343,6 +332,70 @@ func Render(in Input) (*Output, error) {
 }
 
 func userlistName(a model.AccessList) string { return "ul_" + sanitize(a.ID) }
+
+// writeRoutes renders a host's routing. Plain routes become use_backend
+// lines. When any route rewrites the path or the Host header, the matching
+// route is picked first and remembered in txn.route, because use_backend runs
+// after http-request rules and would no longer see the original path.
+func writeRoutes(w func(string, ...any), acl string, routes []model.Route, pools map[string]model.Pool) {
+	rewrites := false
+	for _, r := range routes {
+		if r.RewritePrefix != "" || r.HostHeader != "" {
+			rewrites = true
+		}
+	}
+	if !rewrites {
+		for _, r := range routes {
+			if r.PathPrefix != "" {
+				w("    use_backend %s if %s { path_beg %s }", beName(pools[r.PoolID]), acl, r.PathPrefix)
+			}
+		}
+		for _, r := range routes {
+			if r.PathPrefix == "" {
+				w("    use_backend %s if %s", beName(pools[r.PoolID]), acl)
+			}
+		}
+		return
+	}
+	// Path routes in order, then the default route, as one ordered list.
+	var ordered []int
+	for i, r := range routes {
+		if r.PathPrefix != "" {
+			ordered = append(ordered, i)
+		}
+	}
+	for i, r := range routes {
+		if r.PathPrefix == "" {
+			ordered = append(ordered, i)
+		}
+	}
+	unset := "!{ var(txn.route) -m found }"
+	for _, i := range ordered {
+		r := routes[i]
+		if r.PathPrefix != "" {
+			w("    http-request set-var(txn.route) int(%d) if %s %s { path_beg %s }", i, acl, unset, r.PathPrefix)
+		} else {
+			w("    http-request set-var(txn.route) int(%d) if %s %s", i, acl, unset)
+		}
+	}
+	for _, i := range ordered {
+		r := routes[i]
+		is := fmt.Sprintf("%s { var(txn.route) -m int %d }", acl, i)
+		if r.RewritePrefix != "" && r.PathPrefix != "" {
+			from := "^" + regexp.QuoteMeta(r.PathPrefix)
+			if strings.HasSuffix(r.RewritePrefix, "/") {
+				from += "/?"
+			}
+			w("    http-request replace-path '%s(.*)$' '%s\\1' if %s", from, r.RewritePrefix, is)
+		}
+		if r.HostHeader != "" {
+			w("    http-request set-header Host %s if %s", r.HostHeader, is)
+		}
+	}
+	for _, i := range ordered {
+		w("    use_backend %s if %s { var(txn.route) -m int %d }", beName(pools[routes[i].PoolID]), acl, i)
+	}
+}
 
 // writeAccess renders an access list's checks for one host's ACL. A client
 // with valid credentials has them removed before the request reaches the
