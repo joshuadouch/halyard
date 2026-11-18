@@ -189,16 +189,19 @@ export default function HostEditor() {
           <div className="ch"><h3>Routes</h3>{h.mode === 'http' && <button className="btn s" onClick={() => set({ routes: [{ path_prefix: '/', pool_id: modePools[0]?.id ?? '' }, ...h.routes] })}><Icon name="plus" size={12} />Add path route</button>}</div>
           {modePools.length === 0 && <div className="cb"><div className="note">No {h.mode.toUpperCase()} pools yet. <Link to="/pools">Create one</Link> first.</div></div>}
           <table>
-            <thead><tr><th>Path prefix</th><th>Pool</th><th></th></tr></thead>
+            <thead><tr><th>Path prefix</th>{h.mode === 'http' && <th>Rewrite to</th>}<th>Pool</th>{h.mode === 'http' && <th>Upstream Host</th>}<th></th></tr></thead>
             <tbody>
               {h.routes.map((r, i) => (
                 <tr key={i} className="memrow">
                   <td>{r.path_prefix === '' ? <span className="mono dim">everything else</span> :
                     <input className="input mono" value={r.path_prefix} onChange={(e) => setRoute(i, { path_prefix: e.target.value })} />}</td>
+                  {h.mode === 'http' && <td>{r.path_prefix === '' ? <span className="mono dim">unchanged</span> :
+                    <input className="input mono" placeholder="unchanged" value={r.rewrite_prefix ?? ''} onChange={(e) => setRoute(i, { rewrite_prefix: e.target.value })} />}</td>}
                   <td><select className="input" value={r.pool_id} onChange={(e) => setRoute(i, { pool_id: e.target.value })}>
                     <option value="">Choose…</option>
                     {modePools.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.members.length})</option>)}
                   </select></td>
+                  {h.mode === 'http' && <td><input className="input mono" placeholder="as requested" value={r.host_header ?? ''} onChange={(e) => setRoute(i, { host_header: e.target.value })} /></td>}
                   <td style={{ width: 40 }}>{r.path_prefix !== '' && <button className="btn s ghost" onClick={() => set({ routes: h.routes.filter((_, j) => j !== i) })}><Icon name="x" size={12} /></button>}</td>
                 </tr>
               ))}
@@ -206,7 +209,7 @@ export default function HostEditor() {
           </table>
           <div className="cb">
             {h.mode === 'http' && !h.routes.some((r) => r.path_prefix === '') && <button className="btn s" onClick={() => set({ routes: [...h.routes, { path_prefix: '', pool_id: modePools[0]?.id ?? '' }] })}>Add default route</button>}
-            <small className="help">Path routes are checked top to bottom; the first prefix that matches wins.</small>
+            <small className="help">Path routes are checked top to bottom; the first prefix that matches wins. <b>Rewrite to</b> swaps the matched prefix before the request goes upstream (/a/b/x → /c/x). <b>Upstream Host</b> replaces the Host header the pool sees.</small>
             {h.routes.map((r) => pools.find((p) => p.id === r.pool_id)).filter(Boolean).filter((p, i, a) => a.indexOf(p) === i).map((p) => (
               <div key={p!.id} style={{ marginTop: 14 }}>
                 <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>

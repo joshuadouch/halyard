@@ -7,7 +7,7 @@ export interface VIP {
 }
 export interface VIPRow extends VIP { hosts: string[]; local: boolean }
 
-export interface Route { path_prefix: string; pool_id: string }
+export interface Route { path_prefix: string; pool_id: string; rewrite_prefix?: string; host_header?: string }
 export interface Host {
   id: string; hostnames: string[]; vip_id: string; mode: Mode; http_port: number; https_port: number;
   tcp_port: number; force_https: boolean; hsts: boolean; certificate_id: string; routes: Route[];
