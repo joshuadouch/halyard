@@ -70,9 +70,9 @@ type Host struct {
 	CertificateID string   `json:"certificate_id"` // empty = pick by SNI from all certs
 	Routes        []Route  `json:"routes"`
 	Exposure      Exposure `json:"exposure"`
-	PublishDNS    bool     `json:"publish_dns"` // create/maintain DNS records in Cloudflare
-	RequireAOP    bool     `json:"require_aop"` // require Cloudflare Authenticated Origin Pulls
-	AllowCIDRs    []string `json:"allow_cidrs"` // empty = allow all (checked against real client IP)
+	PublishDNS    bool     `json:"publish_dns"`    // create/maintain DNS records in Cloudflare
+	RequireAOP    bool     `json:"require_aop"`    // require Cloudflare Authenticated Origin Pulls
+	AllowCIDRs    []string `json:"allow_cidrs"`    // empty = allow all (checked against real client IP)
 	AccessListID  string   `json:"access_list_id"` // optional reusable access list
 	Enabled       bool     `json:"enabled"`
 	Notes         string   `json:"notes"`
