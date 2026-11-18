@@ -94,7 +94,13 @@ export default function HostEditor() {
                   { v: 'tunnel', label: <><Icon name="tunnel" size={13} />Cloudflare Tunnel</> }]} />
                 <small className="help">
                   {h.exposure === 'lan' && (h.publish_dns ? <>Publishes an unproxied A record pointing at <span className="mono">{vip?.address.split('/')[0] ?? 'the VIP'}</span> (split-horizon friendly).</> : 'No DNS records are created.')}
-                  {h.exposure === 'public' && <>Publishes a proxied record to your public IP{cf?.public_ip ? <> <span className="mono">{cf.public_ip}</span></> : ' (set it on the Cloudflare page)'}. Forward ports on your router to this VIP.</>}
+                  {h.exposure === 'public' && (() => {
+                    const vip_ip = vip?.address.split('/')[0] ?? '';
+                    const priv = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|169\.254\.)/.test(vip_ip);
+                    return priv
+                      ? <>Publishes a proxied record. {vip_ip} is private, so it points at the WAN address{cf?.public_ip ? <> <span className="mono">{cf.public_ip}</span></> : ' (set it on the Cloudflare page)'}; forward ports on your router to this VIP.</>
+                      : <>Publishes a proxied record pointing at this VIP, <span className="mono">{vip_ip || 'the VIP'}</span>.</>;
+                  })()}
                   {h.exposure === 'tunnel' && <>Creates a CNAME to <span className="mono">{tunnelName}</span> and an ingress rule to <span className="mono">https://{vip?.address.split('/')[0] ?? 'VIP'}:{h.https_port || h.http_port}</span>. Visitor IPs come from <span className="mono">CF-Connecting-IP</span>.</>}
                 </small>
               </Field>

@@ -2,6 +2,7 @@ package cloudflare
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sort"
@@ -73,15 +74,21 @@ func Plan(in PlanInput) Desired {
 				if !h.PublishDNS {
 					continue
 				}
-				if in.Settings.PublicIP == "" {
-					d.Notes = append(d.Notes, fmt.Sprintf("%s: set a public IP in Cloudflare settings to publish public records", n))
-					continue
+				// A public VIP is reachable as is. A private VIP sits behind NAT,
+				// so the record points at the WAN address from settings instead.
+				target := v.IP()
+				if ip := net.ParseIP(target); ip == nil || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+					if in.Settings.PublicIP == "" {
+						d.Notes = append(d.Notes, fmt.Sprintf("%s: VIP %s is a private address, so set the WAN address (NAT) in Cloudflare settings to publish it", n, target))
+						continue
+					}
+					target = in.Settings.PublicIP
 				}
 				typ := "A"
-				if ip := net.ParseIP(in.Settings.PublicIP); ip != nil && ip.To4() == nil {
+				if ip := net.ParseIP(target); ip != nil && ip.To4() == nil {
 					typ = "AAAA"
 				}
-				addRec(DNSRecord{Type: typ, Name: n, Content: in.Settings.PublicIP, Proxied: true})
+				addRec(DNSRecord{Type: typ, Name: n, Content: target, Proxied: true})
 			case model.ExposureTunnel:
 				if tunnelTarget == "" {
 					d.Notes = append(d.Notes, fmt.Sprintf("%s: create a tunnel first", n))
@@ -174,6 +181,12 @@ func ReconcileDNS(ctx context.Context, c DNSClient, desired []DNSRecord, dryRun 
 		zoneByID[z.ID] = z
 	}
 	var states []RecordState
+	// One bad zone or record must not stop the others; collect failures.
+	var errs []string
+	fail := func(ch Change) {
+		changes = append(changes, ch)
+		errs = append(errs, ch.Record+": "+ch.Detail)
+	}
 	ids := make([]string, 0, len(zoneByID))
 	for id := range zoneByID {
 		ids = append(ids, id)
@@ -184,7 +197,15 @@ func ReconcileDNS(ctx context.Context, c DNSClient, desired []DNSRecord, dryRun 
 		want := byZone[zid]
 		existing, err := c.DNSRecords(ctx, zid)
 		if err != nil {
-			return changes, states, fmt.Errorf("zone %s: %w", z.Name, err)
+			if len(want) == 0 {
+				// Likely a zone the token can see but not edit; nothing to do there.
+				continue
+			}
+			fail(Change{Action: "error", Zone: z.Name, Record: z.Name, Detail: "could not list DNS records: " + err.Error()})
+			for _, r := range want {
+				states = append(states, RecordState{Zone: z.Name, Desired: r, Status: "error"})
+			}
+			continue
 		}
 		byName := map[string][]DNSRecord{}
 		for _, e := range existing {
@@ -219,7 +240,10 @@ func ReconcileDNS(ctx context.Context, c DNSClient, desired []DNSRecord, dryRun 
 				changes = append(changes, Change{Action: "create", Zone: z.Name, Record: r.Name, Detail: r.Type + " " + r.Content})
 				if !dryRun {
 					if err := c.CreateDNS(ctx, zid, r); err != nil {
-						return changes, states, err
+						fail(Change{Action: "error", Zone: z.Name, Record: r.Name, Detail: "create failed: " + err.Error()})
+						st.Status = "error"
+						states = append(states, st)
+						continue
 					}
 					st.Status = "in_sync"
 					cp := r
@@ -233,7 +257,10 @@ func ReconcileDNS(ctx context.Context, c DNSClient, desired []DNSRecord, dryRun 
 				if !dryRun {
 					r.ID = managed.ID
 					if err := c.UpdateDNS(ctx, zid, r); err != nil {
-						return changes, states, err
+						fail(Change{Action: "error", Zone: z.Name, Record: r.Name, Detail: "update failed: " + err.Error()})
+						st.Status = "error"
+						states = append(states, st)
+						continue
 					}
 					st.Status = "in_sync"
 					cp := r
@@ -256,11 +283,15 @@ func ReconcileDNS(ctx context.Context, c DNSClient, desired []DNSRecord, dryRun 
 				changes = append(changes, Change{Action: "delete", Zone: z.Name, Record: e.Name, Detail: e.Type + " " + e.Content})
 				if !dryRun {
 					if err := c.DeleteDNS(ctx, zid, e.ID); err != nil {
-						return changes, states, err
+						fail(Change{Action: "error", Zone: z.Name, Record: e.Name, Detail: "delete failed: " + err.Error()})
+						continue
 					}
 				}
 			}
 		}
+	}
+	if len(errs) > 0 {
+		return changes, states, errors.New(strings.Join(errs, "; "))
 	}
 	return changes, states, nil
 }

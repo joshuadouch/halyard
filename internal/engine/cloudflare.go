@@ -81,10 +81,12 @@ func (e *Engine) ReconcileCloudflare(ctx context.Context, dryRun bool) (Cloudfla
 		e.cfReport = rep
 		return rep, err
 	}
-	changes, states, err := cloudflare.ReconcileDNS(ctx, cl, plan.Records, dryRun)
+	changes, states, dnsErr := cloudflare.ReconcileDNS(ctx, cl, plan.Records, dryRun)
 	rep.Changes, rep.Records = changes, states
-	if err != nil {
-		return fail(err)
+	if dnsErr != nil && len(changes) == 0 && len(states) == 0 {
+		// Nothing could be checked at all (e.g. the zone list failed).
+		e.Store.AddEvent(ctx, "error", "cloudflare", "DNS sync failed: "+dnsErr.Error())
+		return fail(dnsErr)
 	}
 	if settings.TunnelID != "" && settings.AccountID != "" && !dryRun {
 		cur, err := cl.TunnelConfig(ctx, settings.AccountID, settings.TunnelID)
@@ -113,9 +115,19 @@ func (e *Engine) ReconcileCloudflare(ctx context.Context, dryRun bool) (Cloudfla
 	if n > 0 && !dryRun {
 		e.Store.AddEvent(ctx, "info", "cloudflare", fmt.Sprintf("Cloudflare reconciled: %d change(s)", n))
 	}
+	if dnsErr != nil {
+		// Other records were still synced; report what failed.
+		rep.Error = "Some DNS records could not be synced: " + dnsErr.Error()
+		if !dryRun {
+			e.Store.AddEvent(ctx, "error", "cloudflare", rep.Error)
+		}
+	}
 	settings.LastReconcile = rep.Time.Format(time.RFC3339)
 	_ = e.Store.SetCloudflare(ctx, settings)
 	e.cfReport = rep
+	if dnsErr != nil {
+		return rep, errors.New(rep.Error)
+	}
 	return rep, nil
 }
 

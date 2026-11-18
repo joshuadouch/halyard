@@ -326,6 +326,11 @@ func (s *Server) cfReconcile(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, "add a Cloudflare API token first")
 			return
 		}
+		if len(rep.Records) > 0 || len(rep.Changes) > 0 {
+			// Partly done: return the report, which carries the error.
+			writeJSON(w, 200, rep)
+			return
+		}
 		writeJSON(w, 502, map[string]any{"error": err.Error(), "report": rep})
 		return
 	}
