@@ -186,7 +186,10 @@ func Render(in Input) (*Output, error) {
 	w("    timeout client 60s")
 	w("    timeout server 60s")
 	w("    timeout http-request 10s")
-	w("    timeout http-keep-alive 10s")
+	// Cloudflare (and cloudflared) reuse idle origin connections for up to
+	// 900s. Closing them sooner races with a request on the same connection,
+	// which Cloudflare reports as a 520.
+	w("    timeout http-keep-alive 930s")
 	w("    timeout queue 30s")
 	w("    timeout tunnel 1h")
 	w("    timeout client-fin 30s")
@@ -343,22 +346,23 @@ func userlistName(a model.AccessList) string { return "ul_" + sanitize(a.ID) }
 // backend.
 func writeAccess(w func(string, ...any), acl string, a model.AccessList) {
 	ips := strings.Join(a.AllowCIDRs, " ")
-	ul := userlistName(a)
-	const realm = "http-request auth realm Restricted"
-	switch {
-	case len(a.Users) == 0:
+	if len(a.Users) == 0 {
 		w("    http-request deny deny_status 403 if %s !{ src %s }", acl, ips)
-	case len(a.AllowCIDRs) == 0:
-		w("    %s if %s !{ http_auth(%s) }", realm, acl, ul)
-	case a.SatisfyAny:
-		w("    %s if %s !{ src %s } !{ http_auth(%s) }", realm, acl, ips, ul)
-	default:
+		return
+	}
+	if len(a.AllowCIDRs) > 0 && !a.SatisfyAny {
 		w("    http-request deny deny_status 403 if %s !{ src %s }", acl, ips)
-		w("    %s if %s !{ http_auth(%s) }", realm, acl, ul)
 	}
-	if len(a.Users) > 0 {
-		w("    http-request del-header Authorization if %s { http_auth(%s) }", acl, ul)
+	// Checking a password hash costs real CPU, so check it once per request
+	// and only when the client sent credentials.
+	ok := "txn.auth_" + sanitize(a.ID)
+	w("    http-request set-var(%s) http_auth(%s) if %s { req.hdr(authorization) -m found }", ok, userlistName(a), acl)
+	cond := fmt.Sprintf("%s !{ var(%s) -m bool }", acl, ok)
+	if len(a.AllowCIDRs) > 0 && a.SatisfyAny {
+		cond = fmt.Sprintf("%s !{ src %s } !{ var(%s) -m bool }", acl, ips, ok)
 	}
+	w("    http-request auth realm Restricted if %s", cond)
+	w("    http-request del-header Authorization if %s { var(%s) -m bool }", acl, ok)
 }
 
 func label(h model.Host) string {

@@ -96,10 +96,12 @@ func TestRender(t *testing.T) {
 		"default_backend halyard_notfound",
 		"userlist ul_a1",
 		"user josh password $6$saltstring$",
-		"http-request auth realm Restricted if h_h4 !{ src 192.168.1.0/24 } !{ http_auth(ul_a1) }",
+		"http-request set-var(txn.auth_a1) http_auth(ul_a1) if h_h4 { req.hdr(authorization) -m found }",
+		"http-request auth realm Restricted if h_h4 !{ src 192.168.1.0/24 } !{ var(txn.auth_a1) -m bool }",
 		"http-request deny deny_status 403 if h_h5 !{ src 192.168.1.0/24 }",
-		"http-request auth realm Restricted if h_h5 !{ http_auth(ul_a2) }",
-		"http-request del-header Authorization if h_h5 { http_auth(ul_a2) }",
+		"http-request auth realm Restricted if h_h5 !{ var(txn.auth_a2) -m bool }",
+		"http-request del-header Authorization if h_h5 { var(txn.auth_a2) -m bool }",
+		"timeout http-keep-alive 930s",
 		"tcp-request connection reject if !{ src 10.0.0.0/8 }",
 	} {
 		if !strings.Contains(cfg, want) {
