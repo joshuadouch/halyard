@@ -8,6 +8,7 @@
 # Every prompt can be preset with an environment variable for unattended use:
 #   CTID CT_HOSTNAME DISK_SIZE CORE_COUNT RAM_SIZE BRIDGE NET (dhcp or CIDR) GATE
 #   EXTRA_BRIDGES (e.g. "vmbr20,vmbr30" for VIP networks) STORAGE TEMPLATE_STORAGE
+#   ROOT_PASSWORD SSH_KEY_FILE (path to public keys for root)
 #   HALYARD_ROLE HALYARD_SECRET HALYARD_VERSION HALYARD_BINARY GITHUB_TOKEN
 #   UNATTENDED=1 (accept defaults without prompts)
 set -euo pipefail
@@ -48,6 +49,22 @@ ask() { # ask VAR "Question" default
   printf -v "$var" '%s' "$val"
 }
 
+ask_password() { # ask_password VAR "Question"
+  local var="$1" q="$2" a b
+  if [[ -n "${!var+x}" ]]; then return; fi
+  if [[ "${UNATTENDED:-0}" == "1" ]] || ! command -v whiptail >/dev/null; then
+    printf -v "$var" '%s' ""; return
+  fi
+  while true; do
+    a=$(whiptail --backtitle "Halyard" --title "$APP LXC" --passwordbox "$q" 9 64 3>&1 1>&2 2>&3) || die "Cancelled"
+    [[ -z "$a" ]] && break
+    b=$(whiptail --backtitle "Halyard" --title "$APP LXC" --passwordbox "Repeat the root password" 9 64 3>&1 1>&2 2>&3) || die "Cancelled"
+    [[ "$a" == "$b" ]] && break
+    whiptail --backtitle "Halyard" --title "$APP LXC" --msgbox "Passwords did not match." 8 40
+  done
+  printf -v "$var" '%s' "$a"
+}
+
 ask CTID "Container ID" "$(pvesh get /cluster/nextid)"
 # Not $HOSTNAME: bash sets that to the Proxmox node name.
 ask CT_HOSTNAME "Hostname" "halyard"
@@ -58,6 +75,10 @@ ask BRIDGE "Management bridge" "vmbr0"
 ask NET "Management IPv4 (CIDR like 10.0.10.5/24, or dhcp)" "dhcp"
 if [[ "$NET" != "dhcp" ]]; then ask GATE "Gateway" ""; fi
 ask EXTRA_BRIDGES "Extra bridges for VIP networks, comma separated (blank for none)" ""
+ask_password ROOT_PASSWORD "Root password for the container (blank: no password, console logs in automatically)"
+DEFAULT_KEYS=""
+[[ -s /root/.ssh/authorized_keys ]] && DEFAULT_KEYS="/root/.ssh/authorized_keys"
+ask SSH_KEY_FILE "SSH public keys for root (file path, blank for none)" "$DEFAULT_KEYS"
 ask HALYARD_ROLE "Role: primary, or standby for a second node" "primary"
 ask STORAGE "Storage for the root disk" "$(pvesm status -content rootdir | awk 'NR==2{print $1}')"
 ask TEMPLATE_STORAGE "Storage for templates" "$(pvesm status -content vztmpl | awk 'NR==2{print $1}')"
@@ -65,6 +86,10 @@ ask TEMPLATE_STORAGE "Storage for templates" "$(pvesm status -content vztmpl | a
 [[ "$CTID" =~ ^[0-9]+$ ]] || die "Invalid container ID"
 pct status "$CTID" >/dev/null 2>&1 && die "Container $CTID already exists"
 [[ -n "$STORAGE" && -n "$TEMPLATE_STORAGE" ]] || die "No suitable storage found"
+[[ -z "${SSH_KEY_FILE:-}" || -r "$SSH_KEY_FILE" ]] || die "SSH key file $SSH_KEY_FILE not found"
+ACCESS=()
+[[ -n "${ROOT_PASSWORD:-}" ]] && ACCESS+=(--password "$ROOT_PASSWORD")
+[[ -n "${SSH_KEY_FILE:-}" ]] && ACCESS+=(--ssh-public-keys "$SSH_KEY_FILE")
 
 msg_info "Finding the Debian 12 template"
 pveam update >/dev/null 2>&1 || true
@@ -89,7 +114,7 @@ done
 msg_info "Creating LXC $CTID"
 pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" \
   --hostname "$CT_HOSTNAME" --cores "$CORE_COUNT" --memory "$RAM_SIZE" --swap 512 \
-  --rootfs "${STORAGE}:${DISK_SIZE}" "${NETS[@]}" \
+  --rootfs "${STORAGE}:${DISK_SIZE}" "${NETS[@]}" "${ACCESS[@]}" \
   --unprivileged 1 --features nesting=1 --onboot 1 --tags halyard \
   --description "Halyard load balancer (HAProxy + keepalived). https://github.com/${REPO}" >/dev/null
 msg_ok "Created LXC $CTID"
@@ -102,6 +127,17 @@ for _ in $(seq 1 30); do
 done
 pct exec "$CTID" -- getent hosts deb.debian.org >/dev/null 2>&1 || die "Container has no working network/DNS"
 msg_ok "Network is up"
+
+if [[ -z "${ROOT_PASSWORD:-}" ]]; then
+  # No password: log the Proxmox console straight in as root.
+  pct exec "$CTID" -- bash -c 'mkdir -p /etc/systemd/system/container-getty@1.service.d && cat > /etc/systemd/system/container-getty@1.service.d/autologin.conf <<EOF
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 \$TERM
+EOF
+systemctl daemon-reload && systemctl restart container-getty@1.service' || true
+  msg_ok "Console logs in as root automatically"
+fi
 
 # Locate the installer: next to this script when run from a clone, else GitHub.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo /nonexistent)"
@@ -136,6 +172,12 @@ echo
 echo -e " ${GN}${BOLD}Halyard is installed in LXC ${CTID}.${CL}"
 echo -e "   Web UI: ${BL}https://${IP}:8443${CL}"
 echo
+if [[ -n "${ROOT_PASSWORD:-}" ]]; then
+  echo -e "   Shell: Proxmox console or ${BL}pct enter ${CTID}${CL}, root with the password you set"
+else
+  echo -e "   Shell: Proxmox console (logs in automatically) or ${BL}pct enter ${CTID}${CL}"
+fi
+[[ -n "${SSH_KEY_FILE:-}" ]] && echo -e "   SSH: ${BL}ssh root@${IP}${CL} with your key"
 echo -e "   Update later: ${BL}pct exec ${CTID} -- halyard-update${CL} (or run halyard-update inside the CT)"
 echo
 echo -e " ${YW}Before adding VIPs:${CL}"
