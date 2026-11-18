@@ -449,6 +449,78 @@ func (s *Store) Users(ctx context.Context) ([]model.User, error) {
 	return out, rows.Err()
 }
 
+// UsersWithSecrets returns every user including password hashes and TOTP
+// secrets. Only used for cluster sync, which is encrypted.
+func (s *Store) UsersWithSecrets(ctx context.Context) ([]model.User, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,username,email,password_hash,totp_secret,totp_enabled FROM users ORDER BY username`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.User
+	for rows.Next() {
+		var u model.User
+		var t int
+		if err := rows.Scan(&u.ID, &u.Username, &u.Email, &u.PasswordHash, &u.TOTPSecret, &t); err != nil {
+			return nil, err
+		}
+		u.TOTPEnabled = t == 1
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// ReplaceUsers makes the users table match users exactly (standby sync).
+// Sessions of users that no longer exist are removed.
+func (s *Store) ReplaceUsers(ctx context.Context, users []model.User) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	keep := map[string]bool{}
+	for _, u := range users {
+		keep[u.ID] = true
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM users`)
+	if err != nil {
+		return err
+	}
+	var drop []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		if !keep[id] {
+			drop = append(drop, id)
+		}
+	}
+	rows.Close()
+	for _, id := range drop {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=?`, id); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id=?`, id); err != nil {
+			return err
+		}
+	}
+	for _, u := range users {
+		t := 0
+		if u.TOTPEnabled {
+			t = 1
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO users(id,username,email,password_hash,totp_secret,totp_enabled) VALUES(?,?,?,?,?,?)
+		  ON CONFLICT(id) DO UPDATE SET username=excluded.username,email=excluded.email,password_hash=excluded.password_hash,
+		  totp_secret=excluded.totp_secret,totp_enabled=excluded.totp_enabled`,
+			u.ID, u.Username, u.Email, u.PasswordHash, u.TOTPSecret, t); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // DeleteUser removes a user and their sessions.
 func (s *Store) DeleteUser(ctx context.Context, id string) error {
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id=?`, id)

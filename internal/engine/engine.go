@@ -378,6 +378,8 @@ func (e *Engine) Loop(ctx context.Context) {
 	renew := time.NewTicker(12 * time.Hour)
 	ips := time.NewTicker(24 * time.Hour)
 	cf := time.NewTicker(15 * time.Minute)
+	sync := time.NewTicker(5 * time.Minute)
+	defer sync.Stop()
 	defer renew.Stop()
 	defer ips.Stop()
 	defer cf.Stop()
@@ -394,6 +396,8 @@ func (e *Engine) Loop(ctx context.Context) {
 			} else if e.Cfg.IsPrimary() {
 				_, _ = e.Apply(ctx, "system", "Cloudflare IP ranges refreshed")
 			}
+		case <-sync.C:
+			e.SyncPeers(ctx)
 		case <-cf.C:
 			if e.Cfg.IsPrimary() {
 				if _, err := e.ReconcileCloudflare(ctx, false); err != nil && !errors.Is(err, ErrCloudflareOff) {

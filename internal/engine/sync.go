@@ -26,6 +26,19 @@ type SyncPayload struct {
 	Time       time.Time                `json:"time"`
 	Snapshot   store.Snapshot           `json:"snapshot"`
 	Cloudflare model.CloudflareSettings `json:"cloudflare"`
+	// Users are sent with password hashes and TOTP secrets so the same
+	// accounts work on every node. Nil from an older primary means "unchanged".
+	Users []SyncUser `json:"users,omitempty"`
+}
+
+// SyncUser is a user with its credentials, for sync only.
+type SyncUser struct {
+	ID           string `json:"id"`
+	Username     string `json:"username"`
+	Email        string `json:"email"`
+	PasswordHash string `json:"password_hash"`
+	TOTPSecret   string `json:"totp_secret"`
+	TOTPEnabled  bool   `json:"totp_enabled"`
 }
 
 // PeerStatus is the latest sync result for a peer.
@@ -86,7 +99,15 @@ func (e *Engine) SyncPeers(ctx context.Context) {
 		return
 	}
 	cf, _ := e.Store.Cloudflare(ctx)
-	body, _ := json.Marshal(SyncPayload{From: e.Cfg.Node.Name, Time: time.Now().UTC(), Snapshot: snap, Cloudflare: cf})
+	users, err := e.Store.UsersWithSecrets(ctx)
+	if err != nil {
+		return
+	}
+	su := make([]SyncUser, 0, len(users))
+	for _, u := range users {
+		su = append(su, SyncUser{ID: u.ID, Username: u.Username, Email: u.Email, PasswordHash: u.PasswordHash, TOTPSecret: u.TOTPSecret, TOTPEnabled: u.TOTPEnabled})
+	}
+	body, _ := json.Marshal(SyncPayload{From: e.Cfg.Node.Name, Time: time.Now().UTC(), Snapshot: snap, Cloudflare: cf, Users: su})
 	sealed, err := Seal(e.Cfg.Cluster.Secret, body)
 	if err != nil {
 		return
@@ -157,11 +178,30 @@ func (e *Engine) ReceiveSync(ctx context.Context, sealed []byte) error {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if err := e.Store.RestoreSnapshot(ctx, p.Snapshot, true); err != nil {
-		return err
+	if p.Users != nil {
+		users := make([]model.User, 0, len(p.Users))
+		for _, u := range p.Users {
+			users = append(users, model.User{ID: u.ID, Username: u.Username, Email: u.Email, PasswordHash: u.PasswordHash, TOTPSecret: u.TOTPSecret, TOTPEnabled: u.TOTPEnabled})
+		}
+		if err := e.Store.ReplaceUsers(ctx, users); err != nil {
+			return err
+		}
 	}
 	local, _ := e.Store.Cloudflare(ctx)
 	p.Cloudflare.LastReconcile = local.LastReconcile
+	// Periodic syncs usually carry no config change; skip the apply then.
+	if cur, err := e.Store.TakeSnapshot(ctx); err == nil {
+		a, _ := json.Marshal(cur)
+		b, _ := json.Marshal(p.Snapshot)
+		c, _ := json.Marshal(local)
+		d, _ := json.Marshal(p.Cloudflare)
+		if bytes.Equal(a, b) && bytes.Equal(c, d) {
+			return nil
+		}
+	}
+	if err := e.Store.RestoreSnapshot(ctx, p.Snapshot, true); err != nil {
+		return err
+	}
 	if err := e.Store.SetCloudflare(ctx, p.Cloudflare); err != nil {
 		return err
 	}

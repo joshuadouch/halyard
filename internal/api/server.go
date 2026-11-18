@@ -200,7 +200,7 @@ func (s *Server) authenticate(r *http.Request) (model.User, error) {
 	for _, allowed := range cf.AccessEmails {
 		if strings.EqualFold(allowed, email) {
 			u := model.User{ID: store.NewID(), Username: strings.ToLower(email), Email: strings.ToLower(email)}
-			if err := s.Store.SaveUser(r.Context(), u); err != nil {
+			if err := s.saveUser(r.Context(), u); err != nil {
 				return model.User{}, err
 			}
 			s.Store.AddEvent(r.Context(), "info", "auth", "Created user "+u.Email+" from Cloudflare Access")

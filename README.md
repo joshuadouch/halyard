@@ -99,7 +99,9 @@ With two nodes, update the standby first, then the primary.
          url: https://10.0.30.12:8443
    ```
 
-Make all changes on the primary. The standby's UI is read only and shows sync
+Create the admin account on the primary only. Users, passwords and 2FA sync to
+the standby along with the config (on every change and every 5 minutes), so the
+same logins work on both nodes. Make all changes on the primary. The standby's UI is read only and shows sync
 status on the Nodes page. Each VIP picks a preferred node; with preempt off a
 VIP stays where it is after a failover until that node fails.
 
