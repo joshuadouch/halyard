@@ -134,6 +134,8 @@ echo
 echo -e " ${GN}${BOLD}Halyard is installed in LXC ${CTID}.${CL}"
 echo -e "   Web UI: ${BL}https://${IP}:8443${CL}"
 echo
+echo -e "   Update later: ${BL}pct exec ${CTID} -- halyard-update${CL} (or run halyard-update inside the CT)"
+echo
 echo -e " ${YW}Before adding VIPs:${CL}"
 echo -e "   If the Proxmox firewall has IP filter enabled on this container's NICs, add each"
 echo -e "   VIP to the container's IP set (Datacenter or CT → Firewall → IPSet ipfilter-net0)."

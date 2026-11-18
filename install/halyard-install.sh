@@ -92,8 +92,30 @@ else
     curl -fsSL "$URL" -o "$TMP" || die "Download failed from $URL (private repo? set GITHUB_TOKEN, or copy a binary and set HALYARD_BINARY)"
   fi
 fi
+UPGRADE=0
+OLD_VERSION=""
+if [[ -x /usr/local/bin/halyard ]]; then
+  UPGRADE=1
+  OLD_VERSION="$(/usr/local/bin/halyard version 2>/dev/null || true)"
+fi
 install -m 0755 "$TMP" /usr/local/bin/halyard
-msg_ok "Installed Halyard $(/usr/local/bin/halyard version)"
+NEW_VERSION="$(/usr/local/bin/halyard version)"
+if [[ $UPGRADE == 1 ]]; then
+  msg_ok "Updated Halyard ${OLD_VERSION:-unknown} -> ${NEW_VERSION}"
+else
+  msg_ok "Installed Halyard ${NEW_VERSION}"
+fi
+
+# halyard-update re-runs the latest installer from GitHub. The config, database
+# and certificates are kept; only packages, the binary and service files change.
+cat > /usr/local/bin/halyard-update <<UPD
+#!/usr/bin/env bash
+# Update Halyard to the latest release, or to HALYARD_VERSION=vX.Y.Z.
+set -euo pipefail
+export HALYARD_REPO="\${HALYARD_REPO:-${REPO}}"
+exec bash -c "\$(curl -fsSL "https://raw.githubusercontent.com/\${HALYARD_REPO}/main/install/halyard-install.sh")"
+UPD
+chmod 0755 /usr/local/bin/halyard-update
 
 msg_info "Configuring the system"
 install -d -m 0750 /etc/halyard /var/lib/halyard
@@ -203,6 +225,7 @@ msg_info "Starting services"
 systemctl enable -q --now keepalived haproxy
 systemctl enable -q cloudflared-halyard 2>/dev/null || true
 systemctl enable -q --now halyard
+if [[ $UPGRADE == 1 ]]; then systemctl restart halyard; fi
 sleep 2
 systemctl is-active -q halyard || { journalctl -u halyard -n 30 --no-pager; die "Halyard failed to start"; }
 msg_ok "Halyard is running"
@@ -210,9 +233,15 @@ msg_ok "Halyard is running"
 IP="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") print $(i+1)}' | head -1)"
 PORT="${LISTEN##*:}"
 echo
+if [[ $UPGRADE == 1 ]]; then
+  echo -e " ${GN}Halyard ${NEW_VERSION} is running.${CL} Hosts, pools, VIPs and settings were kept."
+  echo
+  exit 0
+fi
 echo -e " ${GN}Halyard is ready.${CL}"
 echo -e "   Open ${BL}https://${IP:-<this-machine>}:${PORT}${CL} and create the first admin."
 echo -e "   The UI uses a self-signed certificate until you put it behind Cloudflare Access."
+echo -e "   To update later, run ${BL}halyard-update${CL} on this machine."
 if [[ "$ROLE" == "standby" ]]; then
   echo -e "   This is a ${YW}standby${CL}: add it to cluster.peers on the primary and restart halyard there."
 fi

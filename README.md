@@ -64,6 +64,22 @@ Options are environment variables: `HALYARD_VERSION`, `HALYARD_ROLE`
 `HALYARD_BINARY` (use a binary you already copied) and
 `HALYARD_NO_CLOUDFLARED=1`.
 
+## Updating
+
+Every change merged to `main` publishes a new release automatically
+(`v0.1.<build>`). To update a node, run this on the Proxmox host:
+
+```bash
+pct exec <CTID> -- halyard-update
+```
+
+Or run `halyard-update` in the container's shell. It downloads the latest
+installer and binary, keeps your config, database and certificates, and restarts
+Halyard. HAProxy keeps serving traffic throughout. To pin or roll back a version,
+run `HALYARD_VERSION=v0.1.7 halyard-update`.
+
+With two nodes, update the standby first, then the primary.
+
 ## Two nodes
 
 1. Install the primary. Its cluster secret is `cluster.secret` in
@@ -171,5 +187,5 @@ make release      # dist/halyard-linux-{amd64,arm64}
 For UI work, run `halyard serve` and `cd web && npm run dev`; Vite proxies `/api`
 to `https://127.0.0.1:8443`.
 
-Pushing a `v*` tag builds both binaries and publishes a GitHub release, which
-the installer downloads.
+Each merge to `main` that touches the app builds both binaries and publishes a
+GitHub release, which the installer downloads. The base version is in `VERSION`.
