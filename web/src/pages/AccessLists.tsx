@@ -73,7 +73,7 @@ export default function AccessLists() {
               <Field label="Allowed client IPs" help="Real visitor IPs, after Cloudflare is unwrapped. Single addresses or CIDR ranges.">
                 <Chips mono values={edit.allow_cidrs} onChange={(v) => setEdit({ ...edit, allow_cidrs: v })} placeholder="e.g. 192.168.1.0/24" />
               </Field>
-              <Field label="Basic auth users" help={edit.id ? 'Leave a password blank to keep it. At least 8 characters.' : 'At least 8 characters. Only a hash is stored.'}>
+              <Field label="Basic auth users" help={edit.id ? 'Leave a password blank to keep it.' : 'Only a hash is stored.'}>
                 <div style={{ display: 'grid', gap: 6 }}>
                   {edit.users.map((u, i) => (
                     <div key={i} className="row" style={{ gap: 6 }}>

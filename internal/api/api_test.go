@@ -144,11 +144,7 @@ func TestAPIFlow(t *testing.T) {
 
 	// Access lists: passwords are hashed, never returned, and kept when blank.
 	acl := map[string]any{"name": "office", "allow_cidrs": []string{"192.168.1.0/24"}, "satisfy_any": true,
-		"users": []map[string]any{{"username": "josh", "password": "short"}}}
-	if code, _ = c.do("POST", "/api/access-lists", acl, true); code != 400 {
-		t.Fatalf("short basic auth password accepted: %d", code)
-	}
-	acl["users"] = []map[string]any{{"username": "josh", "password": "a-long-password"}}
+		"users": []map[string]any{{"username": "josh", "password": "a-long-password"}}}
 	code, out = c.do("POST", "/api/access-lists", acl, true)
 	if code != 200 {
 		t.Fatalf("create access list: %d %v", code, out)
