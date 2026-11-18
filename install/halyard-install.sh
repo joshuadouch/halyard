@@ -29,9 +29,12 @@ die() { msg_err "$1"; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "Run as root."
 [[ -r /etc/os-release ]] || die "Cannot detect the OS."
-. /etc/os-release
-[[ "${ID:-}" == "debian" ]] || die "Halyard's installer supports Debian 12 or 13 (found ${PRETTY_NAME:-unknown})."
-CODENAME="${VERSION_CODENAME:-}"
+# Read os-release in a subshell: it defines VERSION, NAME and others that
+# would overwrite this script's variables.
+OS_ID="$(. /etc/os-release && echo "${ID:-}")"
+OS_NAME="$(. /etc/os-release && echo "${PRETTY_NAME:-unknown}")"
+CODENAME="$(. /etc/os-release && echo "${VERSION_CODENAME:-}")"
+[[ "$OS_ID" == "debian" ]] || die "Halyard's installer supports Debian 12 or 13 (found ${OS_NAME})."
 case "$CODENAME" in bookworm|trixie) ;; *) die "Unsupported Debian release: ${CODENAME:-unknown}";; esac
 [[ "$ROLE" == "primary" || "$ROLE" == "standby" ]] || die "HALYARD_ROLE must be primary or standby"
 
