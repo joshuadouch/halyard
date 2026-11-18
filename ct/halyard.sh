@@ -6,7 +6,7 @@
 #   bash -c "$(curl -fsSL https://raw.githubusercontent.com/joshuadouch/halyard/main/ct/halyard.sh)"
 #
 # Every prompt can be preset with an environment variable for unattended use:
-#   CTID HOSTNAME DISK_SIZE CORE_COUNT RAM_SIZE BRIDGE NET (dhcp or CIDR) GATE
+#   CTID CT_HOSTNAME DISK_SIZE CORE_COUNT RAM_SIZE BRIDGE NET (dhcp or CIDR) GATE
 #   EXTRA_BRIDGES (e.g. "vmbr20,vmbr30" for VIP networks) STORAGE TEMPLATE_STORAGE
 #   HALYARD_ROLE HALYARD_SECRET HALYARD_VERSION HALYARD_BINARY GITHUB_TOKEN
 #   UNATTENDED=1 (accept defaults without prompts)
@@ -49,7 +49,8 @@ ask() { # ask VAR "Question" default
 }
 
 ask CTID "Container ID" "$(pvesh get /cluster/nextid)"
-ask HOSTNAME "Hostname" "halyard"
+# Not $HOSTNAME: bash sets that to the Proxmox node name.
+ask CT_HOSTNAME "Hostname" "halyard"
 ask CORE_COUNT "CPU cores" "1"
 ask RAM_SIZE "Memory (MiB)" "1024"
 ask DISK_SIZE "Disk size (GiB)" "4"
@@ -87,7 +88,7 @@ done
 
 msg_info "Creating LXC $CTID"
 pct create "$CTID" "${TEMPLATE_STORAGE}:vztmpl/${TEMPLATE}" \
-  --hostname "$HOSTNAME" --cores "$CORE_COUNT" --memory "$RAM_SIZE" --swap 512 \
+  --hostname "$CT_HOSTNAME" --cores "$CORE_COUNT" --memory "$RAM_SIZE" --swap 512 \
   --rootfs "${STORAGE}:${DISK_SIZE}" "${NETS[@]}" \
   --unprivileged 1 --features nesting=1 --onboot 1 --tags halyard \
   --description "Halyard load balancer (HAProxy + keepalived). https://github.com/${REPO}" >/dev/null
@@ -114,7 +115,6 @@ else
   curl -fsSL "${HDR[@]}" "https://raw.githubusercontent.com/${REPO}/${BRANCH}/install/halyard-install.sh" -o "$INSTALLER" \
     || die "Could not download the installer (private repo? set GITHUB_TOKEN)"
 fi
-pct exec "$CTID" -- bash -c "apt-get update -qq && apt-get install -y -qq curl >/dev/null"
 pct push "$CTID" "$INSTALLER" /root/halyard-install.sh --perms 0755
 ENVS=("HALYARD_ROLE=${HALYARD_ROLE}" "HALYARD_REPO=${REPO}")
 [[ -n "${HALYARD_SECRET:-}" ]] && ENVS+=("HALYARD_SECRET=${HALYARD_SECRET}")
@@ -125,7 +125,8 @@ if [[ -n "${HALYARD_BINARY:-}" ]]; then
   ENVS+=("HALYARD_BINARY=/root/halyard")
 fi
 
-msg_info "Installing Halyard inside the container (this takes a minute or two)"
+msg_info "Installing Halyard inside the container (this takes a few minutes)"
+echo
 pct exec "$CTID" -- env "${ENVS[@]}" bash /root/halyard-install.sh
 pct exec "$CTID" -- rm -f /root/halyard-install.sh /root/halyard
 

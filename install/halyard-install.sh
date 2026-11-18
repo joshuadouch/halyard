@@ -43,14 +43,29 @@ esac
 
 export DEBIAN_FRONTEND=noninteractive
 
+# Fail instead of hanging when a mirror is slow, and stay on IPv4 when this
+# machine has an IPv6 address but no IPv6 route out (common on LXC with SLAAC).
+cat > /etc/apt/apt.conf.d/90halyard <<'EOF'
+Acquire::http::Timeout "30";
+Acquire::https::Timeout "30";
+Acquire::Retries "3";
+EOF
+CURL_OPTS=(--connect-timeout 20 --retry 3)
+if ! ip -6 route show default 2>/dev/null | grep -q .; then
+  echo 'Acquire::ForceIPv4 "true";' >> /etc/apt/apt.conf.d/90halyard
+  CURL_OPTS+=(-4)
+fi
+
+msg_info "Updating package lists"
+apt-get update -q
+msg_ok "Package lists updated"
 msg_info "Installing base packages"
-apt-get update -qq
-apt-get install -y -qq curl ca-certificates gnupg procps iproute2 keepalived jq >/dev/null
+apt-get install -y -q curl ca-certificates gnupg procps iproute2 keepalived jq
 msg_ok "Base packages installed"
 
 msg_info "Installing HAProxy 3.x"
 if [[ "$CODENAME" == "bookworm" ]]; then
-  curl -fsSL https://haproxy.debian.net/bernat.debian.org.gpg | gpg --dearmor --yes -o /usr/share/keyrings/haproxy.debian.net.gpg
+  curl "${CURL_OPTS[@]}" -fsSL https://haproxy.debian.net/bernat.debian.org.gpg | gpg --dearmor --yes -o /usr/share/keyrings/haproxy.debian.net.gpg
   echo "deb [signed-by=/usr/share/keyrings/haproxy.debian.net.gpg] http://haproxy.debian.net bookworm-backports-3.0 main" \
     > /etc/apt/sources.list.d/haproxy.list
   apt-get update -qq
@@ -63,7 +78,7 @@ msg_ok "Installed $(haproxy -v | head -1 | cut -d' ' -f1-3)"
 if [[ "${HALYARD_NO_CLOUDFLARED:-0}" != "1" ]]; then
   msg_info "Installing cloudflared"
   install -d -m 0755 /usr/share/keyrings
-  curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg -o /usr/share/keyrings/cloudflare-main.gpg
+  curl "${CURL_OPTS[@]}" -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg -o /usr/share/keyrings/cloudflare-main.gpg
   echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main" \
     > /etc/apt/sources.list.d/cloudflared.list
   apt-get update -qq
@@ -83,13 +98,13 @@ else
     # Private repo: resolve the asset through the API.
     API="https://api.github.com/repos/${REPO}/releases/${VERSION}"
     [[ "$VERSION" != "latest" ]] && API="https://api.github.com/repos/${REPO}/releases/tags/${VERSION}"
-    ASSET_URL="$(curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" "$API" | jq -r --arg n "$ASSET" '.assets[] | select(.name==$n) | .url')"
+    ASSET_URL="$(curl "${CURL_OPTS[@]}" -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" "$API" | jq -r --arg n "$ASSET" '.assets[] | select(.name==$n) | .url')"
     [[ -n "$ASSET_URL" && "$ASSET_URL" != "null" ]] || die "Release asset $ASSET not found in ${REPO} ${VERSION}"
-    curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/octet-stream" "$ASSET_URL" -o "$TMP"
+    curl "${CURL_OPTS[@]}" -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" -H "Accept: application/octet-stream" "$ASSET_URL" -o "$TMP"
   else
     URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"
     [[ "$VERSION" != "latest" ]] && URL="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET}"
-    curl -fsSL "$URL" -o "$TMP" || die "Download failed from $URL (private repo? set GITHUB_TOKEN, or copy a binary and set HALYARD_BINARY)"
+    curl "${CURL_OPTS[@]}" -fsSL "$URL" -o "$TMP" || die "Download failed from $URL (private repo? set GITHUB_TOKEN, or copy a binary and set HALYARD_BINARY)"
   fi
 fi
 UPGRADE=0
