@@ -48,6 +48,9 @@ type Engine struct {
 	issuing  sync.Map // cert id -> bool
 	lastSync sync.Map // peer name -> PeerStatus
 	cfReport CloudflareReport
+	// cfStateMu guards cfReport and cfStatus; cfMu serialises reconciles.
+	cfStateMu sync.Mutex
+	cfStatus  CloudflareStatus
 }
 
 // New builds an engine.

@@ -6,7 +6,7 @@ type Tab = 'settings' | 'tunnel' | 'dns' | 'security';
 
 export default function Cloudflare() {
   const toast = useToast();
-  const { data, error, reload } = useLoad(() => get<CFView>('/cloudflare'));
+  const { data, error, reload, setData } = useLoad(() => get<CFView>('/cloudflare'));
   const [tab, setTab] = useState<Tab>('settings');
   const [form, setForm] = useState<CFView | null>(null);
   const [token, setToken] = useState('');
@@ -149,7 +149,7 @@ export default function Cloudflare() {
               <p className="muted" style={{ marginBottom: 12 }}>With AOP on, Cloudflare presents a client certificate to your origin. Hosts with “Require AOP” then reject any connection that skips Cloudflare. Tunnel hosts don't need it.</p>
               {(data.zones ?? []).map((z) => (
                 <div key={z.id} className="row" style={{ alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                  <Toggle on={!!data.aop[z.name]} onChange={(on) => run('aop' + z.name, () => post('/cloudflare/aop', { zone: z.name, on }), `AOP ${on ? 'enabled' : 'disabled'} for ${z.name}`)} />
+                  <Toggle on={!!data.aop?.[z.name]} onChange={(on) => { const prev = data.aop ?? {}; setData({ ...data, aop: { ...prev, [z.name]: on } }); run('aop' + z.name, () => post('/cloudflare/aop', { zone: z.name, on }).catch((e) => { setData({ ...data, aop: prev }); throw e; }), `AOP ${on ? 'enabled' : 'disabled'} for ${z.name}`); }} />
                   <span className="mono">{z.name}</span>
                 </div>))}
               {!data.zones?.length && <div className="dim">Connect a token to list zones.</div>}

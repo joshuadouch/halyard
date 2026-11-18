@@ -220,23 +220,10 @@ func (s *Server) getCloudflare(w http.ResponseWriter, r *http.Request) {
 	}
 	v := cfView{CloudflareSettings: cf, TokenSet: cf.APIToken != "", Report: s.Engine.LastCloudflareReport(), AOP: map[string]bool{}}
 	v.APIToken = ""
-	if cf.APIToken != "" {
-		cl := cloudflare.New(cf.APIToken)
-		zones, err := cl.Zones(ctx)
-		if err != nil {
-			v.Error = err.Error()
-		}
-		v.Zones = zones
-		for _, z := range zones {
-			if on, err := cl.AOPEnabled(ctx, z.ID); err == nil {
-				v.AOP[z.Name] = on
-			}
-		}
-		if cf.TunnelID != "" && cf.AccountID != "" {
-			if t, err := cl.Tunnel(ctx, cf.AccountID, cf.TunnelID); err == nil {
-				v.Tunnel = &t
-			}
-		}
+	// light=1 skips the Cloudflare API (pages that only need settings).
+	if cf.APIToken != "" && r.URL.Query().Get("light") != "1" {
+		st := s.Engine.CloudflareStatus(ctx, r.URL.Query().Get("refresh") == "1")
+		v.Zones, v.AOP, v.Tunnel, v.Error = st.Zones, st.AOP, st.Tunnel, st.Error
 	}
 	writeJSON(w, 200, v)
 }
@@ -286,6 +273,7 @@ func (s *Server) putCloudflare(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
+	s.Engine.InvalidateCloudflareStatus()
 	if _, err := s.Engine.Apply(ctx, currentUser(r).Username, "Cloudflare settings changed"); err != nil {
 		_ = s.Store.SetCloudflare(ctx, cur)
 		writeErr(w, 422, err.Error())
@@ -306,6 +294,7 @@ func (s *Server) cfTunnel(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err.Error())
 		return
 	}
+	s.Engine.InvalidateCloudflareStatus()
 	rep, err := s.Engine.ReconcileCloudflare(r.Context(), false)
 	if err != nil {
 		writeJSON(w, 200, map[string]any{"ok": true, "warning": err.Error(), "report": rep})
