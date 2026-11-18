@@ -116,7 +116,8 @@ else
     || die "Could not download the installer (private repo? set GITHUB_TOKEN)"
 fi
 pct push "$CTID" "$INSTALLER" /root/halyard-install.sh --perms 0755
-ENVS=("HALYARD_ROLE=${HALYARD_ROLE}" "HALYARD_REPO=${REPO}")
+# C.UTF-8 always exists; the host shell's locale often is not installed in the CT.
+ENVS=("LANG=C.UTF-8" "LC_ALL=C.UTF-8" "HALYARD_ROLE=${HALYARD_ROLE}" "HALYARD_REPO=${REPO}")
 [[ -n "${HALYARD_SECRET:-}" ]] && ENVS+=("HALYARD_SECRET=${HALYARD_SECRET}")
 [[ -n "${HALYARD_VERSION:-}" ]] && ENVS+=("HALYARD_VERSION=${HALYARD_VERSION}")
 [[ -n "${GITHUB_TOKEN:-}" ]] && ENVS+=("GITHUB_TOKEN=${GITHUB_TOKEN}")

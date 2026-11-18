@@ -29,9 +29,12 @@ die() { msg_err "$1"; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "Run as root."
 [[ -r /etc/os-release ]] || die "Cannot detect the OS."
-. /etc/os-release
-[[ "${ID:-}" == "debian" ]] || die "Halyard's installer supports Debian 12 or 13 (found ${PRETTY_NAME:-unknown})."
-CODENAME="${VERSION_CODENAME:-}"
+# Read os-release in a subshell: it defines VERSION, NAME and others that
+# would overwrite this script's variables.
+OS_ID="$(. /etc/os-release && echo "${ID:-}")"
+OS_NAME="$(. /etc/os-release && echo "${PRETTY_NAME:-unknown}")"
+CODENAME="$(. /etc/os-release && echo "${VERSION_CODENAME:-}")"
+[[ "$OS_ID" == "debian" ]] || die "Halyard's installer supports Debian 12 or 13 (found ${OS_NAME})."
 case "$CODENAME" in bookworm|trixie) ;; *) die "Unsupported Debian release: ${CODENAME:-unknown}";; esac
 [[ "$ROLE" == "primary" || "$ROLE" == "standby" ]] || die "HALYARD_ROLE must be primary or standby"
 
@@ -42,6 +45,8 @@ case "$(uname -m)" in
 esac
 
 export DEBIAN_FRONTEND=noninteractive
+# Use a locale that always exists, so apt and perl do not warn over SSH.
+export LANG=C.UTF-8 LC_ALL=C.UTF-8
 
 # Fail instead of hanging when a mirror is slow, and stay on IPv4 when this
 # machine has an IPv6 address but no IPv6 route out (common on LXC with SLAAC).
