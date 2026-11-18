@@ -125,4 +125,107 @@ tr.click:hover td{background:#131c2b}
 .memrow td{padding:8px 10px}
 .memrow input.input{height:30px}
 small.help{display:block;color:var(--dim);font-size:11.5px;margin-top:6px}
-@media (max-width:900px){.side{display:none}.row{flex-wrap:wrap}.grid2,.grid3{grid-template-columns:1fr}}
+.code{overflow-x:auto}
+.menubtn,.mobile-only{display:none}
+.scrim{display:none}
+
+/* ---- Tablet and phone ------------------------------------------------------
+   Below 900px the sidebar becomes a slide-in drawer, the page scrolls as a
+   whole (so mobile browser chrome can collapse), side-by-side cards stack,
+   and edit panels open as full-screen sheets. */
+@media (max-width:900px){
+  #root{display:block;height:auto}
+  html,body{height:auto}
+  body{-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
+  .side{position:fixed;inset:0 auto 0 0;z-index:60;height:100dvh;width:min(280px,84vw);transform:translateX(-102%);transition:transform .22s ease;
+    padding-top:calc(18px + env(safe-area-inset-top));padding-bottom:calc(14px + env(safe-area-inset-bottom));padding-left:calc(12px + env(safe-area-inset-left));box-shadow:none}
+  .side.open{transform:none;box-shadow:12px 0 40px rgba(0,0,0,.5)}
+  .scrim{display:block;position:fixed;inset:0;z-index:55;background:rgba(3,6,12,.6);animation:fade .2s ease}
+  @keyframes fade{from{opacity:0}}
+  .nav a{padding:11px 10px;font-size:14px}
+  .main{height:auto;min-height:100dvh}
+  .top{position:sticky;top:0;z-index:30;background:rgba(11,15,23,.92);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    height:auto;min-height:56px;padding:env(safe-area-inset-top) calc(12px + env(safe-area-inset-right)) 0 calc(8px + env(safe-area-inset-left));gap:10px;flex-wrap:wrap}
+  .menubtn{display:grid;place-items:center;width:44px;height:44px;margin-right:-4px;border:none;background:none;color:var(--text);border-radius:10px;cursor:pointer}
+  .menubtn:active{background:#16233a}
+  .crumb{font-size:15px}
+  .top .avatar{display:none}
+  .top .badge{order:5;margin:0 0 8px 46px}
+  .content{overflow:visible;padding:16px calc(14px + env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left))}
+  .mobile-only{display:inline-flex}
+
+  /* headings and page header */
+  h1{font-size:20px}
+  .head{flex-wrap:wrap;align-items:flex-start;gap:12px;margin-bottom:16px}
+  .head>div:first-child{flex:1 1 220px;min-width:0}
+  .card .ch{flex-wrap:wrap;gap:8px;padding:12px 14px}
+  .card .cb{padding:14px}
+
+  /* layout rows: cards and stacks take the full width; stat tiles go two up */
+  .row{flex-wrap:wrap}
+  .row>.card,.row>.stack{flex:1 1 100% !important;width:auto !important;min-width:0 !important}
+  .row>.card.stat{flex:1 1 calc(50% - 6px) !important;padding:12px 14px}
+  .row:has(>.card.stat){gap:12px !important}
+  .row:has(>.card),.row:has(>.stack){gap:14px !important}
+  .stat .v{font-size:22px}
+  .grid2,.grid3{grid-template-columns:1fr}
+  .grid2 .grid2{grid-template-columns:1fr 1fr}
+
+  /* touch-sized controls; 16px text stops iOS zooming into fields */
+  .btn{height:40px;padding:0 14px}
+  .btn.s{height:34px;padding:0 11px}
+  .input{min-height:42px}
+  input.input,select.input,textarea.input,.chips input{font-size:16px}
+  select.input{background-position:calc(100% - 16px) 18px,calc(100% - 11px) 18px}
+  .memrow input.input,.memrow select.input{height:40px}
+  .toggle{width:42px;height:26px;border-radius:13px}
+  .toggle::after{width:22px;height:22px}
+  .toggle.on::after{left:18px}
+  .seg{display:flex;flex-wrap:wrap;max-width:100%}
+  .seg span{flex:1 1 auto;justify-content:center;padding:10px 12px;border-bottom:1px solid var(--line2);margin-bottom:-1px}
+  .row>.toggle+div{flex:1;min-width:0}
+  .tabs{overflow-x:auto;scrollbar-width:none;gap:18px;margin-left:-14px;margin-right:-14px;padding:0 14px}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs span{white-space:nowrap;padding-top:6px;cursor:pointer}
+  .kv{grid-template-columns:minmax(96px,34%) 1fr;word-break:break-word}
+
+  /* edit panels become full-screen sheets */
+  .card.panel{position:fixed;inset:0;z-index:50;width:auto !important;border-radius:0;border:none;overflow:auto;overscroll-behavior:contain;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);animation:sheet .2s ease}
+  .card.panel>.ch{position:sticky;top:calc(-1 * env(safe-area-inset-top));z-index:2;background:var(--panel);min-height:56px}
+  @keyframes sheet{from{transform:translateY(24px);opacity:0}}
+  body:has(.card.panel),body:has(.side.open){overflow:hidden}
+
+  .modal-bg{place-items:end center}
+  .modal{width:100%;max-height:92dvh;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom)}
+  .toast{left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));max-width:none}
+  .login{width:auto;margin:auto 16px}
+  .diff{max-height:none}
+  td,th{padding-left:14px;padding-right:14px}
+}
+
+/* ---- Phone: tables with a header row become stacked cards ----------------- */
+@media (max-width:700px){
+  .content{padding-top:14px}
+  .head .btn{height:38px}
+  table.rt,table.rt tbody,table.rt tr,table.rt td{display:block;width:auto !important}
+  table.rt thead{display:none}
+  table.rt tr{padding:12px 14px;border-bottom:1px solid var(--line)}
+  table.rt tr:last-child{border-bottom:none}
+  table.rt td{display:flow-root;border:none;padding:4px 0 4px 104px;white-space:normal;word-break:break-word;text-align:left !important}
+  table.rt td::before{content:attr(data-label);float:left;margin-left:-104px;padding-top:2px;width:96px;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);font-weight:600;line-height:1.3}
+  table.rt td[data-label=""]{padding-left:0}
+  table.rt td[data-label=""]::before{display:none}
+  table.rt td:empty{display:none}
+  /* the first cell is the row's title unless it is a form field */
+  table.rt td:first-child:not(:has(input,select,textarea)){padding:0 0 6px;font-size:14px}
+  table.rt td:first-child:not(:has(input,select,textarea))::before{display:none}
+  /* a trailing actions cell sits on its own line, right-aligned */
+  table.rt td:last-child[data-label=""]:not(:empty){display:flex;justify-content:flex-end;gap:8px;padding-top:8px}
+  table.rt tr.memrow td{padding-top:5px;padding-bottom:5px}
+  table.rt tr.memrow td::before{padding-top:12px}
+  tr.click:hover td{background:none}
+  tr.click:active{background:#131c2b}
+  /* header-less tables (dashboard lists): let text wrap */
+  td{white-space:normal}
+}

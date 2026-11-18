@@ -65,7 +65,7 @@ export default function AccessLists() {
           )}
         </div>
         {edit && (
-          <div className="card" style={{ width: 380, flex: 'none' }}>
+          <div className="card panel" style={{ width: 380, flex: 'none' }}>
             <div className="ch"><h3>{edit.id ? 'Edit access list' : 'New access list'}</h3><button className="btn s ghost" onClick={() => setEdit(null)}><Icon name="x" size={14} /></button></div>
             <div className="cb">
               <ErrorBox error={err} />

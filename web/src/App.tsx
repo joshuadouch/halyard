@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useResponsiveTables } from './responsive';
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { get, post, setUnauthorizedHandler, User } from './api';
 import { Badge, Icon, Logo, ToastProvider } from './ui';
@@ -33,9 +34,19 @@ const titles: Record<string, string> = {
 function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const loc = useLocation();
   const section = loc.pathname.split('/')[1] || '';
+  const [menu, setMenu] = useState(false);
+  useEffect(() => setMenu(false), [loc.pathname]);
+  useEffect(() => {
+    if (!menu) return;
+    const h = (e: KeyboardEvent) => e.key === 'Escape' && setMenu(false);
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [menu]);
+  useResponsiveTables();
   return (
     <>
-      <aside className="side">
+      {menu && <div className="scrim" onClick={() => setMenu(false)} />}
+      <aside className={'side' + (menu ? ' open' : '')}>
         <div className="brand"><Logo />Halyard<span className="badge n" style={{ marginLeft: 'auto', fontSize: 10 }}>{me.version}</span></div>
         <nav className="nav">
           {nav.map((n) => n.length === 1
@@ -55,6 +66,7 @@ function Shell({ me, onLogout }: { me: Me; onLogout: () => void }) {
       </aside>
       <div className="main">
         <div className="top">
+          <button className="menubtn" onClick={() => setMenu(true)} aria-label="Open menu"><Icon name="menu" size={20} /></button>
           <div className="crumb"><b>{titles[section] ?? ''}</b></div>
           {me.role !== 'primary' && <Badge kind="w">Standby node: read only</Badge>}
           <div style={{ marginLeft: 'auto' }} className="applybar"><span className="dot" />Live</div>
