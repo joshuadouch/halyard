@@ -9,6 +9,16 @@ const blank = (vip: string, pool: string): Host => ({
   require_aop: false, allow_cidrs: [], enabled: true, notes: '',
 });
 
+// Same rule as the server: *.x covers exactly one label under x.
+function covers(domain: string, name: string): boolean {
+  domain = domain.toLowerCase(); name = name.toLowerCase();
+  if (!domain.startsWith('*.')) return domain === name;
+  const suffix = domain.slice(1);
+  if (!name.endsWith(suffix)) return false;
+  const label = name.slice(0, -suffix.length);
+  return label !== '' && !label.includes('.');
+}
+
 export default function HostEditor() {
   const { id = 'new' } = useParams();
   const isNew = id === 'new';
@@ -21,6 +31,7 @@ export default function HostEditor() {
   const [cf, setCf] = useState<CFView | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const [newCert, setNewCert] = useState(isNew);
 
   useEffect(() => {
     Promise.all([get<VIP[]>('/vips'), get<Pool[]>('/pools'), get<Cert[]>('/certs'), isNew ? Promise.resolve(null) : get<Host>('/hosts/' + id)])
@@ -35,13 +46,28 @@ export default function HostEditor() {
   const set = (patch: Partial<Host>) => setH({ ...h, ...patch });
   const vip = vips.find((v) => v.id === h.vip_id);
   const tunnelName = cf?.tunnel_name || 'your tunnel';
+  const usableCerts = certs.filter((c) => ['valid', 'renewing', 'pending'].includes(c.status));
+  const coveredBy = h.hostnames.length ? usableCerts.find((c) => h.hostnames.every((n) => c.domains.some((d) => covers(d, n)))) : undefined;
+  const acmeReady = !!(cf?.token_set && cf.acme_email);
+  const canRequest = h.mode === 'http' && !!h.https_port && h.hostnames.length > 0 && !coveredBy && !h.certificate_id;
 
   const save = async () => {
     setBusy(true); setErr(null);
     try {
       const body = { ...h, allow_cidrs: h.allow_cidrs ?? [] };
       const saved = isNew ? await post<Host>('/hosts', body) : await put<Host>('/hosts/' + id, body);
-      toast('Saved and applied');
+      if (canRequest && newCert && acmeReady) {
+        try {
+          await post('/certs', { domains: saved.hostnames, key_type: 'ec256' });
+          toast('Saved. Certificate requested; it is used automatically once issued (usually under a minute).');
+        } catch (e) {
+          toast('Saved, but the certificate request failed');
+          setErr(e);
+        }
+        setNewCert(false);
+      } else {
+        toast('Saved and applied');
+      }
       if (isNew) nav('/hosts/' + saved.id, { replace: true }); else setH(saved);
     } catch (e) { setErr(e); } finally { setBusy(false); }
   };
@@ -116,6 +142,11 @@ export default function HostEditor() {
                   <Chips mono values={h.allow_cidrs ?? []} onChange={(v) => set({ allow_cidrs: v })} placeholder="e.g. 10.0.0.0/8" />
                 </Field>
               </div>
+              {canRequest && (acmeReady
+                ? <Toggle on={newCert} onChange={setNewCert} label="Request a new certificate for these names"
+                    help={<>Let's Encrypt via Cloudflare DNS, covering <span className="mono">{h.hostnames.join(', ')}</span>. Requested when you save; the host uses it automatically once issued.</>} />
+                : <div className="note">No certificate covers these names yet. Add a Cloudflare token and ACME email on the Cloudflare page to request one from here.</div>)}
+              {h.mode === 'http' && !!h.https_port && coveredBy && !h.certificate_id && <div className="note">Covered by the certificate for <span className="mono">{coveredBy.domains.join(', ')}</span>.</div>}
               <Toggle on={h.force_https} onChange={(v) => set({ force_https: v })} label="Redirect HTTP to HTTPS" />
               <Toggle on={h.hsts} onChange={(v) => set({ hsts: v })} label="Send HSTS header" help="Browsers will refuse plain HTTP for a year. Only turn on once HTTPS works." />
               {h.exposure === 'public' && <Toggle on={h.require_aop} onChange={(v) => set({ require_aop: v })} label="Require Cloudflare Authenticated Origin Pulls"
