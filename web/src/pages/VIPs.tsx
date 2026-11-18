@@ -65,7 +65,11 @@ export default function VIPs() {
   const ip = edit?.address.split('/')[0];
   const match = ip ? ifaceFor(ifs, ip) : undefined;
   const chosen = edit ? byName.get(edit.interface) : undefined;
-  const open = (v: VIP) => { setErr(null); setIfTouched(!!v.id); setEdit(v); };
+  // Edit only the VIP's own fields; the row's extras (hosts, local) are rejected by the API.
+  const open = (v: VIP) => {
+    const { id, address, label, interface: iface, vrid, preferred_node, preempt, track_haproxy } = v;
+    setErr(null); setIfTouched(!!id); setEdit({ id, address, label, interface: iface, vrid, preferred_node, preempt, track_haproxy });
+  };
   const setAddress = (address: string) => {
     if (!edit) return;
     const m = ifaceFor(ifs, address.split('/')[0]);
