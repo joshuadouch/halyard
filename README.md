@@ -42,7 +42,10 @@ bash -c "$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
 
 The script asks for the container ID, size, management bridge and address, and
 **extra bridges for VIP networks**. Each extra bridge becomes `eth1`, `eth2`…
-with no address, ready for VIPs. Every prompt can be preset with an environment
+with no address, ready for VIPs. It also asks for an optional root password and SSH key file
+(your node's `/root/.ssh/authorized_keys` is offered by default). With no
+password, the Proxmox console logs in as root automatically; `pct enter <CTID>`
+always works from the node. Every prompt can be preset with an environment
 variable (see the top of `ct/halyard.sh`), and `UNATTENDED=1` accepts defaults.
 
 Open `https://<container-ip>:8443` and create the first admin straight away:
