@@ -155,8 +155,29 @@ func (e *Engine) Render(ctx context.Context) (*render.Output, store.Snapshot, er
 	if err != nil {
 		return nil, snap, err
 	}
-	out, err := render.Render(render.Input{Snap: snap, Config: e.Cfg, Cloudflare: cf, Paths: e.Paths})
+	out, err := render.Render(render.Input{Snap: snap, Config: e.Cfg, Cloudflare: cf, Paths: e.Paths, NodeInterface: ifaceWithIP(e.Cfg.Node.Address)})
 	return out, snap, err
+}
+
+// ifaceWithIP returns the name of the local interface that has ip, if any.
+func ifaceWithIP(ip string) string {
+	want := net.ParseIP(ip)
+	if want == nil {
+		return ""
+	}
+	ifs, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, i := range ifs {
+		addrs, _ := i.Addrs()
+		for _, a := range addrs {
+			if n, ok := a.(*net.IPNet); ok && n.IP.Equal(want) {
+				return i.Name
+			}
+		}
+	}
+	return ""
 }
 
 // Apply renders, validates and activates the current state.

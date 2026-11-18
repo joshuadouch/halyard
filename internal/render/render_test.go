@@ -114,6 +114,20 @@ func TestRender(t *testing.T) {
 			t.Errorf("keepalived.conf is missing %q", want)
 		}
 	}
+	if !strings.Contains(ka, "interface eth1") {
+		t.Error("without a known node interface, VRRP should run on the VIP's interface")
+	}
+	in2 := in
+	in2.NodeInterface = "eth0"
+	out2, err := Render(in2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"interface eth0", "track_interface {\n        eth1", "10.0.10.10/24 dev eth1", "unicast_src_ip 10.0.30.11"} {
+		if !strings.Contains(out2.Keepalived, want) {
+			t.Errorf("unicast keepalived.conf is missing %q:\n%s", want, out2.Keepalived)
+		}
+	}
 	if strings.Contains(ka, "test-secret") {
 		t.Error("keepalived.conf leaks the cluster secret")
 	}

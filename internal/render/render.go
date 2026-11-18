@@ -44,6 +44,9 @@ type Input struct {
 	Config     *config.Config
 	Cloudflare model.CloudflareSettings
 	Paths      Paths
+	// NodeInterface is the local interface holding Config.Node.Address.
+	// Unicast VRRP adverts are sent from and received on it.
+	NodeInterface string
 }
 
 // Output is the rendered configuration.
@@ -627,9 +630,18 @@ func renderKeepalived(in Input) (string, error) {
 		if preferred == c.Node.Name {
 			prio = 150
 		}
+		// With unicast, adverts travel between the nodes' own addresses.
+		// keepalived only reads adverts on the instance interface, so it must
+		// be the one holding unicast_src_ip; otherwise a VIP on a separate NIC
+		// never hears its peer and both nodes take the address.
+		unicast := len(peerAddrs) > 0 && c.Node.Address != ""
+		iface := v.Interface
+		if unicast && in.NodeInterface != "" {
+			iface = in.NodeInterface
+		}
 		w("vrrp_instance HY_%d {", v.VRID)
 		w("    state BACKUP")
-		w("    interface %s", v.Interface)
+		w("    interface %s", iface)
 		w("    virtual_router_id %d", v.VRID)
 		w("    priority %d", prio)
 		w("    advert_int 1")
@@ -640,7 +652,12 @@ func renderKeepalived(in Input) (string, error) {
 		w("        auth_type PASS")
 		w("        auth_pass %s", VRRPPassword(c.Cluster.Secret, v.VRID))
 		w("    }")
-		if len(peerAddrs) > 0 && c.Node.Address != "" {
+		if iface != v.Interface {
+			w("    track_interface {")
+			w("        %s", v.Interface)
+			w("    }")
+		}
+		if unicast {
 			w("    unicast_src_ip %s", c.Node.Address)
 			w("    unicast_peer {")
 			for _, a := range peerAddrs {
