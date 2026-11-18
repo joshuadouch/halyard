@@ -75,9 +75,6 @@ func (s *Server) saveAccessList(w http.ResponseWriter, r *http.Request) {
 		for i := range a.Users {
 			u := &a.Users[i]
 			if u.Password != "" {
-				if len(u.Password) < 8 {
-					return fmt.Errorf("the password for %s must be at least 8 characters", u.Username)
-				}
 				u.PasswordHash = auth.HashCrypt(u.Password)
 			} else {
 				u.PasswordHash = old[u.Username]
