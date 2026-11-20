@@ -65,6 +65,40 @@ export default function Settings({ me }: { me: Me }) {
           </div>
         </div>
       </div>
+      <div style={{ marginTop: 16 }}><Tokens /></div>
     </>
+  );
+}
+
+interface APIToken { id: string; name: string; prefix: string; created: string; author: string; last_used: string }
+
+// Tokens lets other programs, like Berth, manage hosts through the API.
+function Tokens() {
+  const toast = useToast();
+  const list = useLoad(() => get<APIToken[]>('/tokens'));
+  const [name, setName] = useState('');
+  const [made, setMade] = useState<string | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const when = (iso: string) => { const d = new Date(iso); return d.getFullYear() < 2000 ? 'never' : d.toLocaleString(); };
+  return (
+    <div className="card">
+      <div className="ch"><h3>API tokens</h3></div>
+      <div className="cb">
+        <p className="muted" style={{ marginBottom: 12 }}>A token lets another program, such as Berth, manage VIPs, pools, hosts and certificates with <span className="mono">Authorization: Bearer hlt_…</span>. It cannot manage users or tokens.</p>
+        <ErrorBox error={err} />
+        {made && <div className="note"><b>Copy this token now; it is not shown again.</b><div className="input mono" style={{ marginTop: 8, userSelect: 'all', overflow: 'hidden', textOverflow: 'ellipsis' }}>{made}</div></div>}
+        <div className="row" style={{ gap: 8 }}>
+          <input className="input" style={{ maxWidth: 280 }} placeholder="Name, like berth" value={name} onChange={(e) => setName(e.target.value)} />
+          <button className="btn p" onClick={() => { setErr(null); post<{ token: string }>('/tokens', { name }).then((r) => { setMade(r.token); setName(''); list.reload(); }).catch(setErr); }}><Icon name="plus" />Create token</button>
+        </div>
+      </div>
+      {list.data && list.data.length > 0 && <table>
+        <thead><tr><th>Name</th><th>Token</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+        <tbody>{list.data.map((t) => (
+          <tr key={t.id}><td><b>{t.name}</b></td><td className="mono">{t.prefix}…</td><td className="muted">{when(t.created)}{t.author && ' by ' + t.author}</td><td className="muted">{when(t.last_used)}</td>
+            <td style={{ textAlign: 'right' }}><button className="btn s ghost" title="Revoke" onClick={() => confirm(`Revoke ${t.name}? Programs using it stop working.`) && del('/tokens/' + t.id).then(() => { toast('Token revoked'); list.reload(); }).catch((e) => toast(e.message, true))}><Icon name="trash" size={12} /></button></td></tr>
+        ))}</tbody>
+      </table>}
+    </div>
   );
 }

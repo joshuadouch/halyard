@@ -197,6 +197,18 @@ The UI listens on `:8443` with a self-signed certificate.
 
 Both work at the same time.
 
+## API tokens
+
+Other programs can manage Halyard through its REST API with a token. Create one
+under **Settings → API tokens** (it is shown once) and send it as
+`Authorization: Bearer hlt_...`. A token can do everything the UI does with
+VIPs, pools, hosts, certificates and Cloudflare, but cannot manage users or
+tokens. Changes it makes appear in config history as `api:<token name>`. Only a
+hash is stored; revoke a token from the same page. Tokens live on the primary.
+
+[Berth](https://github.com/joshuadouch/berth) uses a token to create a host for
+each site it hosts.
+
 ## Files
 
 | Path | What |
