@@ -71,6 +71,9 @@ func (s *Server) Handler() http.Handler {
 	a("GET /api/users", s.listUsers)
 	a("POST /api/users", s.createUser)
 	a("DELETE /api/users/{id}", s.deleteUser)
+	a("GET /api/tokens", s.listTokens)
+	a("POST /api/tokens", s.createToken)
+	a("DELETE /api/tokens/{id}", s.deleteToken)
 
 	a("GET /api/dashboard", s.dashboard)
 	a("GET /api/stats", s.stats)
@@ -178,11 +181,27 @@ func spaHandler(ui fs.FS) http.Handler {
 	})
 }
 
-// requireAuth accepts a session cookie or a Cloudflare Access JWT. Mutating
-// requests also need the X-Halyard header, which browsers will not send
-// cross-site without a CORS preflight we never allow.
+// requireAuth accepts a session cookie, a Cloudflare Access JWT or an API
+// token. Mutating requests from a browser also need the X-Halyard header,
+// which browsers will not send cross-site without a CORS preflight we never
+// allow. API tokens are sent explicitly, so they do not need it.
 func (s *Server) requireAuth(h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if u, isToken, err := s.tokenUser(r); isToken {
+			if err != nil {
+				writeErr(w, 401, err.Error())
+				return
+			}
+			// Tokens manage load balancing, not accounts.
+			for _, p := range []string{"/api/me", "/api/users", "/api/tokens"} {
+				if strings.HasPrefix(r.URL.Path, p) {
+					writeErr(w, 403, "API tokens cannot use this endpoint")
+					return
+				}
+			}
+			h(w, r.WithContext(context.WithValue(r.Context(), userKey, u)))
+			return
+		}
 		u, err := s.authenticate(r)
 		if err != nil {
 			writeErr(w, 401, "sign in required")
